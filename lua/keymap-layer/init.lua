@@ -52,7 +52,10 @@ function Layer:_constructor(input)
    if type(self.config.timeout) == 'boolean' and self.config.timeout then
       self.config.timeout = vim.o.timeoutlen
    end
-   self.original = {} -- Original keymaps: global and buffer local
+
+   -- Everything to restore when Layer exit, including original keymaps:
+   -- global and buffer local.
+   self.original = {}
 
    -- Table with all left hand sides of key mappings of the type `<Plug>...`.
    -- Pattern: self.plug.mode.key
@@ -68,28 +71,13 @@ function Layer:_constructor(input)
       end
    })
 
-   for _, mappings_type in ipairs({ 'enter', 'layer', 'exit' }) do
-      if input[mappings_type] then
-         -- enter_keymaps, layer_keymaps, exit_keymaps
-         local keymaps = mappings_type..'_keymaps'
-         self[keymaps] = setmetatable({}, {
-            __index = function(tbl, mode)
-               tbl[mode] = {}
-               return tbl[mode]
-            end
-         })
-         for _, map in ipairs(input[mappings_type]) do
-            local mode, lhs, rhs, opts = map[1], map[2], map[3] or '<Nop>', map[4]
-            if type(mode) == 'table' then
-               for _, m in ipairs(mode) do
-                  self[keymaps][m][lhs] = { rhs, opts }
-               end
-            else
-               self[keymaps][mode][lhs] = { rhs, opts }
-            end
-         end
-         setmetatable(self[keymaps], nil)
-      end
+   if input.layer_keymaps then
+      -- When input was passed already in the internal form.
+      self.enter_keymaps = input.enter_keymaps
+      self.layer_keymaps = input.layer_keymaps
+      self.exit_keymaps  = input.exit_keymaps
+   else
+      self:_normalize_input(input)
    end
 
    -- Setup <Esc> key to exit the Layer if no one exit key have been passed.
@@ -225,6 +213,32 @@ function Layer:set_keymap(mode, lhs, rhs, opts)
          vim.keymap.set(mode, lhs, unpack(map))
       else
          vim.keymap.set(mode, lhs, map)
+      end
+   end
+end
+
+function Layer:_normalize_input(input)
+   for _, mappings_type in ipairs({ 'enter', 'layer', 'exit' }) do
+      if input[mappings_type] then
+         -- enter_keymaps, layer_keymaps, exit_keymaps
+         local keymaps = mappings_type..'_keymaps'
+         self[keymaps] = setmetatable({}, {
+            __index = function(tbl, mode)
+               tbl[mode] = {}
+               return tbl[mode]
+            end
+         })
+         for _, map in ipairs(input[mappings_type]) do
+            local mode, lhs, rhs, opts = map[1], map[2], map[3] or '<Nop>', map[4]
+            if type(mode) == 'table' then
+               for _, m in ipairs(mode) do
+                  self[keymaps][m][lhs] = { rhs, opts }
+               end
+            else
+               self[keymaps][mode][lhs] = { rhs, opts }
+            end
+         end
+         setmetatable(self[keymaps], nil)
       end
    end
 end
