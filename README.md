@@ -1,5 +1,7 @@
 # keymap-layer.nvim
 
+**In this branch, unlike master, Layer class remap global key mappings, instead of buffer local.**
+
 **This library was created as a backend for [pink hydra](https://github.com/anuvyklack/hydra.nvim),
 and in most cases you want use it.**
 
