@@ -2,7 +2,9 @@
 
 ## How key mappings stores inside
 
-The Layer accepts keymaps in the one form, but stores them internally in the another:
+The Layer accepts keymaps in the one form, but stores them internally in the another. 
+The `Layer:_normalize_input()` method is responsible for this.  Notice, that terminal
+codes are also escaped.  
 
 ```
     -----------------------------+------------------------------------
@@ -15,21 +17,21 @@ The Layer accepts keymaps in the one form, but stores them internally in the ano
                                  |
                                  |      enter_keymaps = {
                                  |         n = {
-       enter = {                 |            zl = { 'zl' }, <- opts is nil
-          {'n', 'zl', 'zl'},     |            zh = { 'zh' },
-          {'n', 'zh', 'zh'},     |            gz = { '<Nop>' }
+       enter = {                 |            zl = {'zl', {}},
+          {'n', 'zl', 'zl'},     |            zh = {'zh', {}},
+          {'n', 'zh', 'zh'},     |            gz = {'<Nop>', {}}
           {'n', 'gz'},           |         }
        },                        |      },
        layer = {                 |      layer_keymaps = {
           {'n', 'l', 'zl'},      |         n = {
-          {'n', 'h', 'zh'},      |            l = { 'zl' },
-       },                        |            h = { 'zh' }
+          {'n', 'h', 'zh'},      |            l = {'zl', {}},
+       },                        |            h = {'zh', {}}
        exit = {                  |         }
           {'n', '<Esc>'},        |      },
           {'n', 'q'}             |      exit_keymaps = {
        }                         |         n = {
-                                 |            ['<Esc>'] = { '<Nop>' },
-                                 |            q = { '<Nop>' }
+                                 |            ['\27'] = {'<Nop>', {}},
+                                 |            q = {'<Nop>', {}}
                                  |         }
                                  |      }
                                  |
@@ -40,43 +42,31 @@ desired normal mode keybinding without looping through the whole list every time
 
 ## Dealing with original key mappings
 
-The Layer owerwrite global key mappings. But buffer local key bindings are of the higher
-priority. 
-So on activating Layer, the buffer local key mappings of the current buffer are "cutting"
-(i.e. deleting) and "pasting" into `self.original.buf_keymaps[buffer]` table.
-While Layer is active, this happens to all visited buffers: on entering a new buffer,
-the buffer local key bindings, that are remapped by Layer are "cut" and "paste" into
-`self.original.buf_keymaps[new_buffer]` table.
+The Layer class setup its keybindings as buffer local (except those to activate the layer).
+This, among other things, allows the use of the `<nowait>` keymap option.
 
-On deactivating Layer, the buffer local key bindings that were "cut" are restoring where
-they were for all buffers that are still listed. 
+On activating, Layer sets its keymaps for the current buffer, and while active, for all
+visited buffers.  Original key mappings, overwritten by Layer, are putted into
+`self.original.buf_keymaps[bufnr]` table.  On deactivating Layer, the buffer local key
+bindings are restoring where they were for all buffers that are still "listed". 
 
-`self.original.keymaps` and `self.original.buf_keymaps` tables has the next structure:
+`self.original.buf_keymaps` table has the next structure:
 
 ``` lua
-    self.original.keymaps = {
-       n = {
-          l = {...},
-          h = true,
-          ['<Esc>'] = {...},
-          q = true
-       }
-    }
-
     self.original.buf_keymaps = {
        3 = { -- bufnr
-          n = {
+          n = { -- normal mode
              l = true,
              h = {...},
-             ['<Esc>'] = true,
+             ['\27'] = true, -- <Esc>
              q = true,
           }
        }
        127 = { -- bufnr
-          n = {
+          n = { -- normal mode
              l = true,
              h = {...},
-             ['<Esc>'] = true,
+             ['\27'] = true, -- <Esc>
              q = true,
           }
        }
@@ -86,6 +76,5 @@ they were for all buffers that are still listed.
 - `3` and `127` are buffer numbers for which buffer local mappings are stored;
 - `{...}` denotes existing keymap stored for future restore;
 - `true` is a placeholder, denotes that there is no specific keymap map for this lhs.
-
 
 <!-- vim: set tw=90: -->
