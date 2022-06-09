@@ -229,7 +229,7 @@ function Layer:_setup_layer_keymaps()
    end
 end
 
---- Save keymappings overwritten by Layer for future restore.
+---Save keymappings overwritten by Layer for future restore.
 function Layer:_save_original_keymaps()
 
    local bufnr = vim.api.nvim_get_current_buf()
