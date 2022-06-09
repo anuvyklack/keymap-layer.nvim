@@ -2,7 +2,9 @@
 
 ## How key mappings stores inside
 
-The Layer accepts keymaps in the one form, but stores them internally in the another:
+The Layer accepts keymaps in the one form, but stores them internally in the another. 
+The `Layer:_normalize_input()` method is responsible for this.  Notice, that terminal
+codes are also escaped.  
 
 ```
     -----------------------------+------------------------------------
@@ -15,21 +17,21 @@ The Layer accepts keymaps in the one form, but stores them internally in the ano
                                  |
                                  |      enter_keymaps = {
                                  |         n = {
-       enter = {                 |            zl = { 'zl' }, <- opts is nil
-          {'n', 'zl', 'zl'},     |            zh = { 'zh' },
-          {'n', 'zh', 'zh'},     |            gz = { '<Nop>' }
+       enter = {                 |            zl = {'zl', {}},
+          {'n', 'zl', 'zl'},     |            zh = {'zh', {}},
+          {'n', 'zh', 'zh'},     |            gz = {'<Nop>', {}}
           {'n', 'gz'},           |         }
        },                        |      },
        layer = {                 |      layer_keymaps = {
           {'n', 'l', 'zl'},      |         n = {
-          {'n', 'h', 'zh'},      |            l = { 'zl' },
-       },                        |            h = { 'zh' }
+          {'n', 'h', 'zh'},      |            l = {'zl', {}},
+       },                        |            h = {'zh', {}}
        exit = {                  |         }
           {'n', '<Esc>'},        |      },
           {'n', 'q'}             |      exit_keymaps = {
        }                         |         n = {
-                                 |            ['<Esc>'] = { '<Nop>' },
-                                 |            q = { '<Nop>' }
+                                 |            ['\27'] = {'<Nop>', {}},
+                                 |            q = {'<Nop>', {}}
                                  |         }
                                  |      }
                                  |
@@ -55,7 +57,7 @@ they were for all buffers that are still listed.
 
 ``` lua
     self.original.keymaps = {
-       n = {
+       n = { -- normal mode
           l = {...},
           h = true,
           ['<Esc>'] = {...},
@@ -65,18 +67,18 @@ they were for all buffers that are still listed.
 
     self.original.buf_keymaps = {
        3 = { -- bufnr
-          n = {
+          n = { -- normal mode
              l = true,
              h = {...},
-             ['<Esc>'] = true,
+             ['\27'] = true, -- <Esc>
              q = true,
           }
        }
        127 = { -- bufnr
-          n = {
+          n = { -- normal mode
              l = true,
              h = {...},
-             ['<Esc>'] = true,
+             ['\27'] = true, -- <Esc>
              q = true,
           }
        }

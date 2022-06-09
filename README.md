@@ -97,7 +97,7 @@ local m = {'n', 'x'}
 KeyLayer {
    enter = {...},
    layer = {
-       {m, 'i'},   {m, 'a'},   {m, 'o'},   {m, 's'},   {m, 'c', '<Nop>', {nowait = true}},
+       {m, 'i'},   {m, 'a'},   {m, 'o'},   {m, 's'},   {m, 'c'},
        {m, 'I'},   {m, 'A'},   {m, 'O'},   {m, 'S'},   {m, 'cc'},
        {m, 'gi'},                                      {m, 'C'}
        {m, '#I'},
@@ -132,19 +132,9 @@ active layer.  It can also be used for statusline notification, or anything else
 
 ## Layer object
 
-Beside constructor, Layer object has several public methods.
+Beside constructor, Layer object has next public methods:
 
-#### `layer:enter()`
-
-Activate layer.
-
-#### `layer:exit()`
-
-Deactivate layer.
-
-#### `layer:set_keymap(mode, lhs, rhs, opts)`
-
-Add a new layer key mapping, which will be added into `layer` table.  `enter` and `exit`
-key mapping can't be set by this method. Can be called even when layer is active.
+- `layer:enter()` : activate layer;
+- `layer:exit()` : deactivate layer.
 
 <!-- vim: set tw=90: -->
