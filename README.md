@@ -70,20 +70,19 @@ local layer = KeyLayer({
 })
 ```
 
+### `enter`, `layer` and `exit` tables
+
 `enter`, `layer` and `exit` tables containes the keys to remap.
 They all accept a list of keymappings, each of the form:
 ```lua
 {mode, lhs, rhs, opts}
 ```
-which is absolutely identical to `vim.keymap.set()` signature.
-
-`enter` and `exit` tables are optional, `layer` table is mandatory.
-
+which is pretty-much compares to the signature of the `vim.keymap.set()` function with
+some modifications.  `layer` table is mandatory, `enter` and `exit` tables are optional.
 Key mappings in `enter` table are activate layer. Key mappings in `layer` and `exit`
-tables become available only when layer is active. And mappings in `exit` table deactivate
-layer.
-
-If no one `exit` key was passed (`exit` table is empty), the `<Esc>` will be bind by default.
+tables become available only when layer is active. Mappings in `exit` table deactivate
+layer.  If no one `exit` key was passed (`exit` table is empty), the `<Esc>` will be bind
+by default.
 
 The `rhs` of the mapping can be `nil`.
 For `enter` and `exit` tables it means just to enter/exit the layer and doesn't do any
@@ -99,7 +98,7 @@ KeyLayer {
    layer = {
        {m, 'i'},   {m, 'a'},   {m, 'o'},   {m, 's'},   {m, 'c', '<Nop>', {nowait = true}},
        {m, 'I'},   {m, 'A'},   {m, 'O'},   {m, 'S'},   {m, 'cc'},
-       {m, 'gi'},                                      {m, 'C'}
+       {m, 'gi'},                                      {m, 'C'},
        {m, '#I'},
        ...
    },
@@ -109,12 +108,59 @@ KeyLayer {
 
 **Note:** Only one Layer can be active at a time. The next one will stop the previous.
 
+#### `opts`
+
+`opts` table of each keymap accepts (in theory) all key that `vim.keymap.set` `opts`
+accepts. But their interaction has not been properly tested.
+
+In reality, key `buffer` will have no effect, since Layer binds its keymaps as buffer
+local and will overwrite this flag. This in terms make flag `nowait` awailable, and
+allows, for example bind exit key:
+```lua
+{'n', 'q', <Nop>, {nowait = true}}
+```
+which will exit layer, without waiting `timeoutlen` milliseconds for possible continuation.
+
+Keymaps in `exit` table accepts an extra key in `opts` table:
+
+##### `after_exit` 
+`boolean`
+
+```lua
+exit = {
+    { 'n', '<Enter>', '<cmd>Neogit<CR>', { after_exit = true } }
+    ...
+}
+```
+
+By default, when you press the exit key, Layer executes in the following order:
+
+1. `rhs` of the keymap;
+2. `config.on_exit()` function (passed in `config` table, see below);
+3. restore original keymaps.
+
+This option allows to change this order the next way:
+
+1. `config.on_exit()` function (passed in `config` table, see below);
+2. restore original keymaps;
+3. `rhs` of the keymap.
+
+This is always need when `rhs` opens new buffer with custom buffer local keymaps.  For
+example, **Neogit**.  Without this flag **Neogit** opens its buffer in the Layer scope,
+and then happens two competing processes in undefined order: Layer tries to save the
+original keymaps and set its one, and Neogit tries to set its own keymaps.
+Then if Layer managed first, on exiting, it will restore keymaps saved before Neogit
+set its own, and Neogit keymaps will be lost: you will get Neogit buffer without Neogit
+keybindings.
+Exactly for this case, this option was added: you first exit the Layer and then open
+Neogit, and they don't interfere each other.
+
 ### `config` table
 
 #### `on_enter` and `on_exit`
 `function`
 
-Functions that will be executed on entering and before exiting the layer.
+Functions that will be executed on entering and on exiting the layer.
 
 #### `timeout`
 `boolean | number` (default: `false`)

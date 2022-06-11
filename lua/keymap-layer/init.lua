@@ -116,16 +116,27 @@ function Layer:_constructor(input)
 
       for lhs, map in pairs(keymaps) do
          local rhs, opts = map[1], map[2]
-         if rhs ~= '<Nop>' then
+
+         local after_exit = opts.after_exit
+         opts.after_exit = nil
+
+         if rhs and rhs ~= '<Nop>' then
             vim.keymap.set(mode, self.plug[mode][lhs], rhs, opts)
          else
             self.plug[mode][lhs] = ''
          end
 
-         self.layer_keymaps[mode][lhs] = { table.concat{
-            self.plug[mode][lhs],
-            self.plug[mode].exit,
-         }}
+         if after_exit then
+            self.layer_keymaps[mode][lhs] = { table.concat{
+               self.plug[mode].exit,
+               self.plug[mode][lhs],
+            }}
+         else
+            self.layer_keymaps[mode][lhs] = { table.concat{
+               self.plug[mode][lhs],
+               self.plug[mode].exit,
+            }}
+         end
       end
    end
 
