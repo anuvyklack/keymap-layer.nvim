@@ -37,9 +37,8 @@ function Layer:_constructor(input)
       self.config.timeout = vim.o.timeoutlen
    end
 
-   -- Everything to restore when Layer exit, including original keymaps:
-   -- global and buffer local.
-   self.original = {}
+   self.original = {} -- Everything to restore when exit Layer.
+   self.original.buf_keymaps = {} -- Original buffer local keymaps.
 
    -- Table with all left hand sides of key mappings of the type `<Plug>...`.
    -- Pattern: self.plug.mode.key
@@ -231,10 +230,11 @@ end
 
 ---Save keymappings overwritten by Layer for future restore.
 function Layer:_save_original_keymaps()
+   self.original.buf_keymaps = self.original.buf_keymaps or {}
 
    local bufnr = vim.api.nvim_get_current_buf()
-   self.original.buf_keymaps = self.original.buf_keymaps or {}
-   self.original.buf_keymaps[bufnr] = self.original.buf_keymaps[bufnr] or {}
+   if self.original.buf_keymaps[bufnr] then return end
+   self.original.buf_keymaps[bufnr] = {}
 
    for mode, keymaps in pairs(self.layer_keymaps) do
       self.original.buf_keymaps[bufnr][mode] = self.original.buf_keymaps[bufnr][mode] or {}
