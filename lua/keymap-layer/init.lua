@@ -1,7 +1,7 @@
-local util = require('keymap-layer.util')
+local utils = require('keymap-layer.util')
 
 ---@type function
-local termcodes = util.termcodes
+local termcodes = utils.termcodes
 
 ---Currently active `keymap.Layer` object if any.
 ---@type keymap.Layer
@@ -29,8 +29,43 @@ setmetatable(Layer, {
 ---@param input table
 ---@return keymap.Layer
 function Layer:_constructor(input)
+   if input.enter then
+      for _, keymap in ipairs(input.enter) do
+         local opts = keymap[4] or {}
+         vim.validate({
+              expr = { opts.expr,   'boolean', true },
+            silent = { opts.silent, 'boolean', true },
+            nowait = { opts.nowait, 'boolean', true },
+              desc = { opts.desc,   'string',  true },
+         })
+      end
+   end
+   if input.layer then
+      for _, keymap in ipairs(input.layer) do
+         local opts = keymap[4] or {}
+         vim.validate({
+              expr = { opts.expr,   'boolean', true },
+            silent = { opts.silent, 'boolean', true },
+            nowait = { opts.nowait, 'boolean', true },
+              desc = { opts.desc,   'string',  true },
+         })
+      end
+   end
+   if input.exit then
+      for _, keymap in ipairs(input.exit) do
+         local opts = keymap[4] or {}
+         vim.validate({
+            expr = { opts.expr, 'boolean', true },
+            silent = { opts.silent, 'boolean', true },
+            nowait = { opts.nowait, 'boolean', true },
+            after_exit = { opts.after_exit, 'boolean', true },
+            desc = { opts.desc, 'string', true },
+         })
+      end
+   end
+
    self.active = false
-   self.id = util.generate_id() -- Unique ID for each Layer.
+   self.id = utils.generate_id() -- Unique ID for each Layer.
    self.name = input.name
    self.config = input.config or {}
    if type(self.config.timeout) == 'boolean' and self.config.timeout then
@@ -79,8 +114,14 @@ function Layer:_constructor(input)
 
          for lhs, map in pairs(keymaps) do
             local rhs, opts = map[1], map[2]
+
+            local expr   = opts.expr
+            local silent = opts.silent
+            local desc   = opts.desc
+            local nowait = opts.nowait
+
             if rhs ~= '<Nop>' then
-               vim.keymap.set(mode, self.plug[mode]['entrance_'..lhs], rhs, opts)
+               vim.keymap.set(mode, self.plug[mode]['entrance_'..lhs], rhs, { expr = expr })
             else
                self.plug[mode]['entrance_'..lhs] = ''
             end
@@ -88,54 +129,75 @@ function Layer:_constructor(input)
             vim.keymap.set(mode, lhs, table.concat{
                self.plug[mode].enter,
                self.plug[mode]['entrance_'..lhs],
-            })
+            }, { nowait = nowait, silent = silent, desc = desc })
          end
       end
    end
 
+   -- Setup Layer keybindings
    -- Add timer to layer keybindings
    if self.config.timeout then
       for mode, keymaps in pairs(self.layer_keymaps) do
          if not rawget(self.plug[mode], 'timer') then
             vim.keymap.set(mode, self.plug[mode].timer, function() self:_timer() end)
          end
-         for lhs, map in pairs(keymaps) do
-            vim.keymap.set(mode, self.plug[mode][lhs], map[1], map[2])
 
-            self.layer_keymaps[mode][lhs] = { table.concat{
-               self.plug[mode].timer,
-               self.plug[mode][lhs]
-            }}
+         for lhs, map in pairs(keymaps) do
+            local rhs, opts = map[1], map[2]
+
+            local expr   = opts.expr
+            local silent = opts.silent
+            local desc   = opts.desc
+            local nowait = opts.nowait
+
+            vim.keymap.set(mode, self.plug[mode][lhs], rhs, { expr = expr })
+
+            self.layer_keymaps[mode][lhs] = {
+               table.concat{
+                  self.plug[mode].timer,
+                  self.plug[mode][lhs]
+               },
+               { nowait = nowait, silent = silent, desc = desc }
+            }
          end
       end
    end
 
    -- Setup keybindings to exit Layer
-   for mode, keymaps in pairs(self.exit_keymaps) do
-      vim.keymap.set(mode, self.plug[mode].exit, function() self:exit() end)
+   if self.exit_keymaps then
+      for mode, keymaps in pairs(self.exit_keymaps) do
+         vim.keymap.set(mode, self.plug[mode].exit, function() self:exit() end)
 
-      for lhs, map in pairs(keymaps) do
-         local rhs, opts = map[1], map[2]
+         for lhs, map in pairs(keymaps) do
+            local rhs, opts = map[1], map[2]
 
-         local after_exit = opts.after_exit
-         opts.after_exit = nil
+            local expr = opts.expr
+            local silent = opts.silent
+            local desc = opts.desc
+            local nowait = opts.nowait
+            local after_exit = opts.after_exit
 
-         if rhs and rhs ~= '<Nop>' then
-            vim.keymap.set(mode, self.plug[mode][lhs], rhs, opts)
-         else
-            self.plug[mode][lhs] = ''
-         end
+            if rhs and rhs ~= '<Nop>' then
+               vim.keymap.set(mode, self.plug[mode][lhs], rhs, { expr = expr })
+            else
+               self.plug[mode][lhs] = ''
+            end
 
-         if after_exit then
-            self.layer_keymaps[mode][lhs] = { table.concat{
-               self.plug[mode].exit,
-               self.plug[mode][lhs],
-            }}
-         else
-            self.layer_keymaps[mode][lhs] = { table.concat{
-               self.plug[mode][lhs],
-               self.plug[mode].exit,
-            }}
+            if after_exit then
+               rhs = table.concat{
+                  self.plug[mode].exit,
+                  self.plug[mode][lhs],
+               }
+            else
+               rhs = table.concat{
+                  self.plug[mode][lhs],
+                  self.plug[mode].exit,
+               }
+            end
+
+            self.layer_keymaps[mode][lhs] =
+               { rhs, { nowait = nowait, silent = silent, desc = desc } }
+
          end
       end
    end
@@ -230,10 +292,7 @@ function Layer:_setup_layer_keymaps()
    for mode, keymaps in pairs(self.layer_keymaps) do
       for lhs, map in pairs(keymaps) do
          local rhs, opts = map[1], map[2]
-
-         opts = opts or {} -- just in case
          opts.buffer = true
-
          vim.keymap.set(mode, lhs, rhs, opts)
       end
    end

@@ -89,49 +89,42 @@ For `enter` and `exit` tables it means just to enter/exit the layer and doesn't 
 side job.  For `layer` table, it means to disable this key while layer is active
 (internally it will be mapped to `<Nop>`).
 
-For example, to disable the input mode inside the layer, you can use the next snippet:
-```lua
-local m = {'n', 'x'}
-
-KeyLayer {
-   enter = {...},
-   layer = {
-       {m, 'i'},   {m, 'a'},   {m, 'o'},   {m, 's'},   {m, 'c', '<Nop>', {nowait = true}},
-       {m, 'I'},   {m, 'A'},   {m, 'O'},   {m, 'S'},   {m, 'cc'},
-       {m, 'gi'},                                      {m, 'C'},
-       {m, '#I'},
-       ...
-   },
-   exit = {...}
-}
-```
-
 **Note:** Only one Layer can be active at a time. The next one will stop the previous.
 
 #### `opts`
+`table`
 
-`opts` table of each keymap accepts (in theory) all key that `vim.keymap.set` `opts`
-accepts. But their interaction has not been properly tested.
+`opts` table modifies the keymap behaviour and accepts the following keys:
 
-In reality, key `buffer` will have no effect, since Layer binds its keymaps as buffer
-local and will overwrite this flag. This in terms make flag `nowait` awailable, and
-allows, for example bind exit key:
-```lua
-{'n', 'q', <Nop>, {nowait = true}}
-```
-which will exit layer, without waiting `timeoutlen` milliseconds for possible continuation.
-
-Keymaps in `exit` table accepts an extra key in `opts` table:
-
-##### `after_exit` 
+##### `expr`, `silent`, `desc`
 `boolean`
+
+Built-in map arguments. See:
+
+- `:help :map-<expr>`
+- `:help :map-<silent>`
+- [desc](https://www.reddit.com/r/neovim/comments/rt0zzh/comment/hqpxolg/?utm_source=share&utm_medium=web2x&context=3)
+
+##### `nowait`
+`boolean`
+
+Layer binds its keymaps as buffer local.  This makes flag `nowait` awailable.
+See `:help :map-<nowait>`.
+This allows, for example bind exit key:
 
 ```lua
 exit = {
-    { 'n', '<Enter>', '<cmd>Neogit<CR>', { after_exit = true } }
-    ...
+    { 'n', 'q', nil, { nowait = true } }
 }
 ```
+
+which will exit layer, without waiting `&timeoutlen` milliseconds for possible continuation.
+
+
+##### `after_exit`
+`boolean`
+
+**This is exclusive `exit` table key.**
 
 By default, when you press the exit key, Layer executes in the following order:
 
@@ -146,7 +139,13 @@ This option allows to change this order the next way:
 3. `rhs` of the keymap.
 
 This is always need when `rhs` opens new buffer with custom buffer local keymaps.  For
-example, **Neogit**.  Without this flag **Neogit** opens its buffer in the Layer scope,
+example, **Neogit**.
+```lua
+exit = {
+    { 'n', '<Enter>', '<cmd>Neogit<CR>', { after_exit = true } }
+}
+```
+Without this flag **Neogit** opens its buffer in the Layer scope,
 and then happens two competing processes in undefined order: Layer tries to save the
 original keymaps and set its one, and Neogit tries to set its own keymaps.
 Then if Layer managed first, on exiting, it will restore keymaps saved before Neogit
