@@ -278,6 +278,8 @@ function Layer:_constructor(input)
    -- Since now all exit keymaps are incorporated into `self.layer_keymaps`
    -- table, we don't need it anymore.
    self.exit_keymaps = nil
+
+   self:_debug('Layer:_constructor', self)
 end
 
 ---Activate the Layer
@@ -302,6 +304,8 @@ function Layer:enter()
          self:_setup_layer_keymaps(input.buf)
       end
    })
+
+   self:_debug('Layer:enter', vim.api.nvim_get_autocmds({ group = augroup_name }))
 end
 
 ---Exit the Layer and restore all previous keymaps
@@ -315,6 +319,7 @@ function Layer:exit()
    end
 
    if self.config.on_exit then self.config.on_exit() end
+   self:_restore_original()
 
 
    vim.api.nvim_clear_autocmds({ group = augroup_id })
@@ -322,6 +327,7 @@ function Layer:exit()
    self.active = false
    _G.active_keymap_layer = nil
 
+   self:_debug('Layer:exit', self)
 end
 
 ---Save original boffer option value and set the new one.
@@ -497,6 +503,15 @@ function Layer:_timer()
       self.timer = vim.loop.new_timer()
       self.timer:start(self.config.timeout, self.config.timeout,
                        vim.schedule_wrap(function() self:exit() end))
+   end
+end
+
+function Layer:_debug(...)
+   if self.config.debug then
+      print('---------------------------------[keymap-layer]---------------------------------')
+      for _, line in ipairs({...}) do
+         vim.pretty_print(line)
+      end
    end
 end
 
