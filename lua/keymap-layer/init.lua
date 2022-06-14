@@ -313,7 +313,6 @@ end
 
 ---Exit the Layer and restore all previous keymaps
 function Layer:exit()
-   -- assert(self.active, 'The Layer is not active.')
    if not self.active then return end
 
    if self.timer then
@@ -324,9 +323,8 @@ function Layer:exit()
    if self.config.on_exit then self.config.on_exit() end
    self:_restore_original()
 
-
    vim.api.nvim_clear_autocmds({ group = augroup_id })
-   self.original.buf_keymaps = nil
+   self.original = util.unlimited_depth_table()
    self.active = false
    _G.active_keymap_layer = nil
 
