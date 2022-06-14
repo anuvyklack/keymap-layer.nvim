@@ -3,6 +3,9 @@ local util = require 'keymap-layer.util'
 ---@type function
 local termcodes = util.termcodes
 
+local augroup_name = 'Layer'
+local augroup_id = vim.api.nvim_create_augroup(augroup_name, { clear = true })
+
 ---Currently active `keymap.Layer` object if any.
 ---@type keymap.Layer
 _G.active_keymap_layer = nil
@@ -63,6 +66,12 @@ function Layer:_constructor(input)
          })
       end
    end
+   if input.config then
+      vim.validate({
+         on_enter = { input.config.on_enter, 'function', true },
+         on_exit = { input.config.on_exit, 'function', true }
+      })
+   end
 
    self.active = false
    self.id = util.generate_id() -- Unique ID for each Layer.
@@ -74,6 +83,70 @@ function Layer:_constructor(input)
 
    -- Everything to restore when exit Layer.
    self.original = util.unlimited_depth_table()
+
+   -- HACK
+   -- I replace in the backstage the `vim.bo` table called inside
+   -- `self.config.on_enter()` function with my own.
+   if self.config.on_enter then
+      -- HACK
+      -- The `vim.deepcopy` doesn't working (rize an error):
+      -- ```
+      --    local env = vim.deepcopy(getfenv())
+      -- ```
+      -- But the next snippet is working. I don't know why.
+      local env = vim.tbl_deep_extend('force', getfenv(), {
+         vim = {
+            bo = {},
+            wo = {}
+         }
+      })
+      env.vim.bo = setmetatable({}, {
+         __newindex = function(_, option, value)
+            self:_set_buf_option(nil, option, value)
+
+            vim.api.nvim_create_autocmd('BufEnter', {
+               group = augroup_id,
+               desc = string.format('set "%s" buffer option', option),
+               callback = function(input)
+                  self:_set_buf_option(input.buf, option, value)
+               end
+            })
+         end
+      })
+      env.vim.wo = setmetatable({}, {
+         __newindex = function(_, option, value)
+            self:_set_win_option(nil, option, value)
+
+            vim.api.nvim_create_autocmd('WinEnter', {
+               group = augroup_id,
+               desc = string.format('set "%s" window option', option),
+               callback = function(input)
+                  self:_set_win_option(input.buf, option, value)
+               end
+            })
+         end
+      })
+      setfenv(self.config.on_enter, env)
+   end
+   if self.config.on_exit then
+      local env = vim.tbl_deep_extend('force', getfenv(), {
+         vim = {
+            bo = {},
+            wo = {}
+         }
+      })
+      env.vim.bo = setmetatable({}, {
+         __newindex = function(_, option, _)
+            util.warn(string.format("You don't need to restore vim.bo.%s option in on_exit() function. Reed more in documentation.", option))
+         end
+      })
+      env.vim.wo = setmetatable({}, {
+         __newindex = function(_, option, _)
+            util.warn(string.format("You don't need to restore vim.wo.%s option in on_exit() function. Reed more in documentation.", option))
+         end
+      })
+      setfenv(self.config.on_exit, env)
+   end
 
    -- Table with all left hand sides of key mappings of the type `<Plug>...`.
    -- Pattern: self.plug.mode.key
@@ -222,8 +295,9 @@ function Layer:enter()
    self:_timer()
 
    -- Apply Layer keybindings on every visited buffer while Layer is active.
-   -- self.autocmd = vim.api.nvim_create_autocmd('BufWinEnter', {
-   self.autocmd = vim.api.nvim_create_autocmd('BufEnter', {
+   vim.api.nvim_create_autocmd('BufEnter', {
+      group = augroup_id,
+      desc = 'setup Layer keymaps',
       callback = function(input)
          self:_setup_layer_keymaps(input.buf)
       end
@@ -242,15 +316,38 @@ function Layer:exit()
 
    if self.config.on_exit then self.config.on_exit() end
 
-   self:_restore_original_keymaps()
 
-   vim.api.nvim_del_autocmd(self.autocmd)
-   self.autocmd = nil
+   vim.api.nvim_clear_autocmds({ group = augroup_id })
    self.original.buf_keymaps = nil
    self.active = false
    _G.active_keymap_layer = nil
 
-   -- print(vim.inspect(self))
+end
+
+---Save original boffer option value and set the new one.
+---@param bufnr number|nil buffer id; if `nil` the current buffer used
+---@param option string the buffer option to set
+---@param value any the value of the option
+function Layer:_set_buf_option(bufnr, option, value)
+   bufnr = bufnr or vim.api.nvim_get_current_buf()
+   if util.tbl_rawget(self.original, 'buf_options', bufnr, option) then
+      return
+   end
+   self.original.buf_options[bufnr][option] = vim.bo[bufnr][option]
+   vim.bo[bufnr][option] = value
+end
+
+---Save original window option value and set the new one.
+---@param winnr number|nil window id; if `nil` the current window used
+---@param option string the window option to set
+---@param value any the value of the option
+function Layer:_set_win_option(winnr, option, value)
+   winnr = winnr or vim.api.nvim_get_current_win()
+   if util.tbl_rawget(self.original, 'win_options', winnr, option) then
+      return
+   end
+   self.original.win_options[winnr][option] = vim.wo[winnr][option]
+   vim.wo[winnr][option] = value
 end
 
 function Layer:_normalize_input(input)
@@ -337,8 +434,8 @@ function Layer:_save_original_keymaps(bufnr)
    end
 end
 
----Restore a keymap overwritten by Layer
-function Layer:_restore_original_keymaps()
+---Restore original keymaps and options overwritten by Layer
+function Layer:_restore_original()
    if not self.active then return end
 
    ---Set with 'listed' buffers.
@@ -353,9 +450,8 @@ function Layer:_restore_original_keymaps()
    for mode, keymaps in pairs(self.layer_keymaps) do
       for lhs, _ in pairs(keymaps) do
          for bufnr, _ in pairs(self.original.buf_keymaps) do
-               -- local map = self.original.buf_keymaps[bufnr][mode][lhs]
-               local map = utils.tbl_rawget(self.original, 'buf_keymaps', bufnr, mode, lhs)
             if listed_buffers[bufnr] then  -- if `bufnr` buffer still exists
+               local map = util.tbl_rawget(self.original.buf_keymaps, bufnr, mode, lhs)
                if type(map) == 'table' then
                   vim.api.nvim_buf_set_keymap(bufnr, mode, lhs, map.rhs, {
                      expr = map.expr,
@@ -368,10 +464,25 @@ function Layer:_restore_original_keymaps()
                else
                   vim.keymap.del(mode, lhs, { buffer = bufnr })
                end
-               self.original.buf_keymaps[bufnr][mode][lhs] = nil
-            else
-               self.original.buf_keymaps[bufnr] = nil
             end
+         end
+      end
+   end
+
+   -- Restore buffer options
+   for bufnr, options in pairs(self.original.buf_options) do
+      if listed_buffers[bufnr] then
+         for option, value in pairs(options) do
+            vim.bo[bufnr][option] = value
+         end
+      end
+   end
+
+   -- Restore window options
+   for winnr, options in pairs(self.original.win_options) do
+      if vim.api.nvim_win_is_valid(winnr) then
+         for option, value in pairs(options) do
+            vim.wo[winnr][option] = value
          end
       end
    end

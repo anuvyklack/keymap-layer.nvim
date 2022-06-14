@@ -59,4 +59,10 @@ function util.tbl_rawget(tbl, ...)
    end
 end
 
-return utils
+function util.warn(msg)
+   vim.schedule(function()
+      vim.notify_once('[keymap-layer.nvim] '..msg, vim.log.levels.WARN)
+   end)
+end
+
+return util
