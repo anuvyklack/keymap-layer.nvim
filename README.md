@@ -47,7 +47,10 @@ local side_scroll = KeyLayer({
        {m, 'q'}
     },
     config = {
-       on_enter = function() print("Enter layer") end,
+       on_enter = function()
+          print("Enter layer")
+          vim.bo.modifiable = false
+       end,
        on_exit  = function() print("Exit layer") end,
        timeout = 3000, -- milliseconds
     }
@@ -161,6 +164,30 @@ Neogit, and they don't interfere each other.
 
 Functions that will be executed on entering and on exiting the layer.
 
+Inside the `on_enter` function the `vim.bo` and `vim.wo` [meta-accessors](https://github.com/nanotee/nvim-lua-guide#using-meta-accessors)
+are redefined to work the way you think they should. If you want some option value to be
+temporary changed while Layer is active, you need just set it with `vim.bo`/`vim.wo`
+meta-accessor. And thats it. All other will be done automatically in the backstage.
+
+##### Meta-accessors
+
+Inside the `on_enter` function, the `vim.bo` and `vim.wo` [meta-accessors](https://github.com/nanotee/nvim-lua-guide#using-meta-accessors)
+are redefined to work the way you think they should. If you want some option value to be
+temporary changed while Layer is active, you need just set it with `vim.bo`/`vim.wo`
+meta-accessor. And that's it. All others will be done automatically in the backstage.
+
+For example, temporary unset `modifiable` (local to buffer) option while Layer is active:
+```lua
+KeyLayer({
+   config = {
+      on_enter = function()
+         vim.bo.modifiable = false
+      end
+   }
+})
+```
+And that's all, nothing more.
+
 #### `timeout`
 `boolean | number` (default: `false`)
 
@@ -182,5 +209,45 @@ Beside constructor, Layer object has next public methods:
 - `layer:enter()` : activate layer;
 - `layer:exit()` : deactivate layer.
 
+---------------------------------------------------------------------------------------
+To disable the possibility to edit text while layer is active, you can either manually
+unmap desired keys with next snippet:
+
+```lua
+local m = {'n', 'x'}
+
+KeyLayer({
+    enter = {...},
+    layer = {
+        {m, 'i'},   {m, 'a'},   {m, 'o'},   {m, 's'},
+        {m, 'I'},   {m, 'A'},   {m, 'O'},   {m, 'S'},
+        {m, 'gi'},
+        {m, '#I'},
+
+        {m, 'c', nil, { nowait = true } },
+        {m, 'C'},
+        {m, 'cc'},
+
+        {m, 'd',  nil, { nowait = true } },
+        {m, 'D'},
+        {m, 'x'},
+        {m, 'X'},
+        ...
+    },
+    exit = {...}
+})
+```
+
+Or disable `modifiable` option:
+```lua
+KeyLayer({
+   config = {
+      on_enter = function()
+         vim.bo.modifiable = false
+      end,
+   }
+   ...
+})
+```
 
 <!-- vim: set tw=90: -->

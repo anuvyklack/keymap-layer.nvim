@@ -89,11 +89,14 @@ function Layer:_constructor(input)
    -- `self.config.on_enter()` function with my own.
    if self.config.on_enter then
       -- HACK
-      -- The `vim.deepcopy` doesn't working (rize an error):
+      -- The `vim.deepcopy()` rize an error if try to copy `getfenv()`
+      -- environment with next snippet:
       -- ```
       --    local env = vim.deepcopy(getfenv())
       -- ```
-      -- But the next snippet is working. I don't know why.
+      -- But `vim.tbl_deep_extend` function makes a copy if extend `getfenv()`
+      -- with not empty table; another way, it returns the reference to the
+      -- original table.
       local env = vim.tbl_deep_extend('force', getfenv(), {
          vim = {
             bo = {},
