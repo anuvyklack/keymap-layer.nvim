@@ -1,7 +1,7 @@
-local utils = require('keymap-layer.util')
+local util = require 'keymap-layer.util'
 
 ---@type function
-local termcodes = utils.termcodes
+local termcodes = util.termcodes
 
 ---Currently active `keymap.Layer` object if any.
 ---@type keymap.Layer
@@ -65,7 +65,7 @@ function Layer:_constructor(input)
    end
 
    self.active = false
-   self.id = utils.generate_id() -- Unique ID for each Layer.
+   self.id = util.generate_id() -- Unique ID for each Layer.
    self.name = input.name
    self.config = input.config or {}
    if type(self.config.timeout) == 'boolean' and self.config.timeout then
@@ -73,7 +73,7 @@ function Layer:_constructor(input)
    end
 
    -- Everything to restore when exit Layer.
-   self.original = utils.unlimited_depth_table()
+   self.original = util.unlimited_depth_table()
 
    -- Table with all left hand sides of key mappings of the type `<Plug>...`.
    -- Pattern: self.plug.mode.key
@@ -138,7 +138,7 @@ function Layer:_constructor(input)
    -- Add timer to layer keybindings
    if self.config.timeout then
       for mode, keymaps in pairs(self.layer_keymaps) do
-         if not utils.tbl_rawget(self.plug, mode, 'timer') then
+         if not util.tbl_rawget(self.plug, mode, 'timer') then
             vim.keymap.set(mode, self.plug[mode].timer, function() self:_timer() end)
          end
 
@@ -259,7 +259,7 @@ function Layer:_normalize_input(input)
          -- enter_keymaps, layer_keymaps, exit_keymaps
          local keymaps = mappings_type..'_keymaps'
 
-         self[keymaps] = utils.unlimited_depth_table()
+         self[keymaps] = util.unlimited_depth_table()
 
          for _, map in ipairs(input[mappings_type]) do
             local mode, lhs, rhs, opts = map[1], map[2], map[3] or '<Nop>', map[4] or {}
@@ -280,7 +280,7 @@ function Layer:_normalize_input(input)
             end
          end
 
-         utils.deep_unsetmetatable(self[keymaps])
+         util.deep_unsetmetatable(self[keymaps])
       end
    end
 end
@@ -290,7 +290,7 @@ end
 function Layer:_setup_layer_keymaps(bufnr)
    -- If original keymaps for `bufnr` buffer are saved,
    -- then we have already set keymaps for that buffer.
-   if utils.tbl_rawget(self.original, 'buf_keymaps', bufnr) then return end
+   if util.tbl_rawget(self.original, 'buf_keymaps', bufnr) then return end
 
    self:_save_original_keymaps(bufnr)
 
@@ -311,7 +311,7 @@ function Layer:_save_original_keymaps(bufnr)
       for _, map in ipairs(vim.api.nvim_buf_get_keymap(bufnr, mode)) do
          map.lhs = termcodes(map.lhs)
          if keymaps[map.lhs] and
-            not utils.tbl_rawget(self.original, 'buf_keymaps', bufnr, mode, map.lhs)
+            not util.tbl_rawget(self.original, 'buf_keymaps', bufnr, mode, map.lhs)
          then
             self.original.buf_keymaps[bufnr][mode][map.lhs] = {
                rhs = map.rhs or '',
@@ -330,7 +330,7 @@ function Layer:_save_original_keymaps(bufnr)
    -- on `Layer:map` method execution while Layer is active.
    for mode, keymaps in pairs(self.layer_keymaps) do
       for lhs, _ in pairs(keymaps) do
-         if not utils.tbl_rawget(self.original.buf_keymaps, bufnr, mode, lhs) then
+         if not util.tbl_rawget(self.original.buf_keymaps, bufnr, mode, lhs) then
             self.original.buf_keymaps[bufnr][mode][lhs] = true
          end
       end
@@ -342,19 +342,20 @@ function Layer:_restore_original_keymaps()
    if not self.active then return end
 
    ---Set with 'listed' buffers.
-   local buffers = {}
+   local listed_buffers = {}
    for _, b in ipairs(vim.api.nvim_list_bufs()) do
       if vim.fn.buflisted(b) == 1 then
-         buffers[b] = true
+         listed_buffers[b] = true
       end
    end
 
+   -- Restore keymaps
    for mode, keymaps in pairs(self.layer_keymaps) do
       for lhs, _ in pairs(keymaps) do
          for bufnr, _ in pairs(self.original.buf_keymaps) do
-            if buffers[bufnr] then  -- if `bufnr` buffer still exists
                -- local map = self.original.buf_keymaps[bufnr][mode][lhs]
                local map = utils.tbl_rawget(self.original, 'buf_keymaps', bufnr, mode, lhs)
+            if listed_buffers[bufnr] then  -- if `bufnr` buffer still exists
                if type(map) == 'table' then
                   vim.api.nvim_buf_set_keymap(bufnr, mode, lhs, map.rhs, {
                      expr = map.expr,

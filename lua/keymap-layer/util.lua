@@ -1,9 +1,9 @@
-local utils = {}
+local util = {}
 local id = 0
 
 ---Generate ID
 ---@return integer
-function utils.generate_id()
+function util.generate_id()
    id = id + 1
    return id
 end
@@ -11,7 +11,7 @@ end
 ---Shortcut to `vim.api.nvim_replace_termcodes`
 ---@param keys string
 ---@return string
-function utils.termcodes(keys)
+function util.termcodes(keys)
    return vim.api.nvim_replace_termcodes(keys, true, true, true)
 end
 
@@ -24,17 +24,17 @@ function mt.__index(self, subtbl)
    return self[subtbl]
 end
 
-function utils.unlimited_depth_table()
+function util.unlimited_depth_table()
    return setmetatable({}, mt)
 end
 
----Deep unset metatables for input table all nested tables.
+---Recursively unset metatable for the input table and all nested tables.
 ---@param tbl table
-function utils.deep_unsetmetatable(tbl)
+function util.deep_unsetmetatable(tbl)
    for _, subtbl in pairs(tbl) do
       setmetatable(tbl, nil)
       if type(subtbl) == 'table' then
-         utils.deep_unsetmetatable(subtbl)
+         util.deep_unsetmetatable(subtbl)
       end
    end
 end
@@ -45,7 +45,7 @@ end
 ---@param ... any
 ---@return any
 ---@see :help vim.tbl_get
-function utils.tbl_rawget(tbl, ...)
+function util.tbl_rawget(tbl, ...)
    if tbl == nil then return nil end
 
    local len = select('#', ...)
@@ -55,7 +55,7 @@ function utils.tbl_rawget(tbl, ...)
    if len == 1 then
       return result
    else
-      return utils.tbl_rawget(result, select(2, ...))
+      return util.tbl_rawget(result, select(2, ...))
    end
 end
 
