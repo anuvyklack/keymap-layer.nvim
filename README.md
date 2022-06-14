@@ -26,6 +26,23 @@ On exiting layer the original keybindings become available again like nothing ha
      /-----/-----/-----/-----/--
 ```
 
+<!-- vim-markdown-toc GFM -->
+
+* [Creating a layer](#creating-a-layer)
+    * [`enter`, `layer` and `exit` tables](#enter-layer-and-exit-tables)
+        * [`opts`](#opts)
+            * [`expr`, `silent`, `desc`](#expr-silent-desc)
+            * [`nowait`](#nowait)
+            * [`after_exit`](#after_exit)
+    * [`config` table](#config-table)
+        * [`on_enter` and `on_exit`](#on_enter-and-on_exit)
+            * [meta-accessors](#meta-accessors)
+        * [`timeout`](#timeout)
+* [Global variable](#global-variable)
+* [Layer object](#layer-object)
+
+<!-- vim-markdown-toc -->
+
 ## Creating a layer
 
 A simple example for illustration of what is written below:
@@ -141,8 +158,9 @@ This option allows to change this order the next way:
 2. restore original keymaps;
 3. `rhs` of the keymap.
 
-This is always need when `rhs` opens new buffer with custom buffer local keymaps.  For
-example, **Neogit**.
+This is always when `rhs` opens new buffer with custom buffer local keymaps. 
+
+For example, exit layer and open [Neogit](https://github.com/TimUntersberger/neogit).
 ```lua
 exit = {
     { 'n', '<Enter>', '<cmd>Neogit<CR>', { after_exit = true } }
@@ -150,12 +168,34 @@ exit = {
 ```
 Without this flag **Neogit** opens its buffer in the Layer scope,
 and then happens two competing processes in undefined order: Layer tries to save the
-original keymaps and set its one, and Neogit tries to set its own keymaps.
+original keymaps and set its own, and Neogit tries to set its own keymaps.
 Then if Layer managed first, on exiting, it will restore keymaps saved before Neogit
 set its own, and Neogit keymaps will be lost: you will get Neogit buffer without Neogit
-keybindings.
-Exactly for this case, this option was added: you first exit the Layer and then open
-Neogit, and they don't interfere each other.
+keybindings. This is shown more clearly in the diagram below.
+
+```
+after_exit = false
+
+      Press        Neogit opens      Layer saves      Neogit set        Layer restores
+     exit key       new buffer         keymaps         keymaps        keymaps saved in (x)
+        :               :                 :               :                   :
+--------o---------------o----------------(x)--------------o-------------------o---------->
+time
+```
+
+For this case, this flag was developed: you first exit the Layer and then open Neogit, and
+they don't interfere each other.
+
+```
+after_exit = true
+
+             Press             Layer exit and          Neogit opens new buffer
+            exit key          restores keymaps             and set keymaps
+               :                     :                          :
+---------------o---------------------o--------------------------o------------------------>
+time
+```
+
 
 ### `config` table
 
@@ -169,7 +209,7 @@ are redefined to work the way you think they should. If you want some option val
 temporary changed while Layer is active, you need just set it with `vim.bo`/`vim.wo`
 meta-accessor. And thats it. All other will be done automatically in the backstage.
 
-##### Meta-accessors
+##### meta-accessors
 
 Inside the `on_enter` function, the `vim.bo` and `vim.wo` [meta-accessors](https://github.com/nanotee/nvim-lua-guide#using-meta-accessors)
 are redefined to work the way you think they should. If you want some option value to be
