@@ -68,8 +68,8 @@ function Layer:_constructor(input)
    end
    if input.config then
       vim.validate({
-         on_enter = { input.config.on_enter, 'function', true },
-         on_exit = { input.config.on_exit, 'function', true }
+         on_enter = { input.config.on_enter, { 'function', 'table' }, true },
+         on_exit  = { input.config.on_exit,  { 'function', 'table' }, true }
       })
    end
 
@@ -88,6 +88,10 @@ function Layer:_constructor(input)
    -- I replace in the backstage the `vim.bo` table called inside
    -- `self.config.on_enter()` function with my own.
    if self.config.on_enter then
+      if type(self.config.on_enter) == 'function' then
+         self.config.on_enter = { self.config.on_enter }
+      end
+
       -- HACK
       -- The `vim.deepcopy()` rize an error if try to copy `getfenv()`
       -- environment with next snippet:
@@ -104,6 +108,7 @@ function Layer:_constructor(input)
          }
       })
       env.vim.bo = setmetatable({}, {
+         __index = getmetatable(vim.bo).__index,
          __newindex = function(_, option, value)
             self:_set_buf_option(nil, option, value)
 
@@ -117,6 +122,7 @@ function Layer:_constructor(input)
          end
       })
       env.vim.wo = setmetatable({}, {
+         __index = getmetatable(vim.wo).__index,
          __newindex = function(_, option, value)
             self:_set_win_option(nil, option, value)
 
@@ -129,9 +135,15 @@ function Layer:_constructor(input)
             })
          end
       })
-      setfenv(self.config.on_enter, env)
+
+      for _, fun in ipairs(self.config.on_enter) do
+         setfenv(fun, env)
+      end
    end
    if self.config.on_exit then
+      if type(self.config.on_enter) == 'function' then
+         self.config.on_exit = { self.config.on_exit }
+      end
       local env = vim.tbl_deep_extend('force', getfenv(), {
          vim = {
             bo = {},
@@ -148,7 +160,9 @@ function Layer:_constructor(input)
             util.warn(string.format("You don't need to restore vim.wo.%s option in on_exit() function. Reed more in documentation.", option))
          end
       })
-      setfenv(self.config.on_exit, env)
+      for _, fun in ipairs(self.config.on_exit) do
+         setfenv(fun, env)
+      end
    end
 
    -- Table with all left hand sides of key mappings of the type `<Plug>...`.
@@ -293,7 +307,11 @@ function Layer:enter()
    self.active = true
    _G.active_keymap_layer = self
 
-   if self.config.on_enter then self.config.on_enter() end
+   if self.config.on_enter then
+      for _, fun in ipairs(self.config.on_enter) do
+         fun()
+      end
+   end
 
    local bufnr = vim.api.nvim_get_current_buf()
    self:_setup_layer_keymaps(bufnr)
@@ -320,7 +338,12 @@ function Layer:exit()
       self.timer = nil
    end
 
-   if self.config.on_exit then self.config.on_exit() end
+   if self.config.on_exit then
+      for _, fun in ipairs(self.config.on_exit) do
+         fun()
+      end
+   end
+
    self:_restore_original()
 
    vim.api.nvim_clear_autocmds({ group = augroup_id })

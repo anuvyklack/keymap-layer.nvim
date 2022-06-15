@@ -200,11 +200,12 @@ time
 ### `config` table
 
 #### `on_enter` and `on_exit`
-`function`
+`function | function[]`
 
-Functions that will be executed on entering and on exiting the layer.
+`on_enter`/`on_exit` is a function or list of function, that will be executed
+on entering / exiting the layer.
 
-Inside the `on_enter` function the `vim.bo` and `vim.wo` [meta-accessors](https://github.com/nanotee/nvim-lua-guide#using-meta-accessors)
+Inside the `on_enter` functions the `vim.bo` and `vim.wo` [meta-accessors](https://github.com/nanotee/nvim-lua-guide#using-meta-accessors)
 are redefined to work the way you think they should. If you want some option value to be
 temporary changed while Layer is active, you need just set it with `vim.bo`/`vim.wo`
 meta-accessor. And thats it. All other will be done automatically in the backstage.
