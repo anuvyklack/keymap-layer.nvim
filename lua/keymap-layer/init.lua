@@ -82,7 +82,10 @@ function Layer:_constructor(input)
    end
 
    -- Everything to restore when exit Layer.
-   self.original = util.unlimited_depth_table()
+   self.original = {
+      buf_keymaps = util.unlimited_depth_table(),
+      o  = {}, go = {}, bo = {}, wo = {}
+   }
 
    -- HACK
    -- I replace in the backstage the `vim.bo` table called inside
@@ -102,64 +105,30 @@ function Layer:_constructor(input)
       -- with not empty table; another way, it returns the reference to the
       -- original table.
       local env = vim.tbl_deep_extend('force', getfenv(), {
-         vim = {
-            bo = {},
-            wo = {}
-         }
+         vim = { o = {}, go = {}, bo = {}, wo = {} }
       })
-      env.vim.bo = setmetatable({}, {
-         __index = getmetatable(vim.bo).__index,
-         __newindex = function(_, option, value)
-            self:_set_buf_option(nil, option, value)
-
-            vim.api.nvim_create_autocmd('BufEnter', {
-               group = augroup_id,
-               desc = string.format('set "%s" buffer option', option),
-               callback = function(input)
-                  self:_set_buf_option(input.buf, option, value)
-               end
-            })
-         end
-      })
-      env.vim.wo = setmetatable({}, {
-         __index = getmetatable(vim.wo).__index,
-         __newindex = function(_, option, value)
-            self:_set_win_option(nil, option, value)
-
-            vim.api.nvim_create_autocmd('WinEnter', {
-               group = augroup_id,
-               desc = string.format('set "%s" window option', option),
-               callback = function(input)
-                  self:_set_win_option(input.buf, option, value)
-               end
-            })
-         end
-      })
+      env.vim.o  = self:_get_meta_accessor('o')
+      env.vim.go = self:_get_meta_accessor('go')
+      env.vim.bo = self:_get_meta_accessor('bo')
+      env.vim.wo = self:_get_meta_accessor('wo')
 
       for _, fun in ipairs(self.config.on_enter) do
          setfenv(fun, env)
       end
    end
    if self.config.on_exit then
-      if type(self.config.on_enter) == 'function' then
+      if type(self.config.on_exit) == 'function' then
          self.config.on_exit = { self.config.on_exit }
       end
+
       local env = vim.tbl_deep_extend('force', getfenv(), {
-         vim = {
-            bo = {},
-            wo = {}
-         }
+         vim = { o = {}, go = {}, bo = {}, wo = {} }
       })
-      env.vim.bo = setmetatable({}, {
-         __newindex = function(_, option, _)
-            util.warn(string.format("You don't need to restore vim.bo.%s option in on_exit() function. Reed more in documentation.", option))
-         end
-      })
-      env.vim.wo = setmetatable({}, {
-         __newindex = function(_, option, _)
-            util.warn(string.format("You don't need to restore vim.wo.%s option in on_exit() function. Reed more in documentation.", option))
-         end
-      })
+      env.vim.o  = util.disable_meta_accessor('o')
+      env.vim.go = util.disable_meta_accessor('go')
+      env.vim.bo = util.disable_meta_accessor('bo')
+      env.vim.wo = util.disable_meta_accessor('wo')
+
       for _, fun in ipairs(self.config.on_exit) do
          setfenv(fun, env)
       end
@@ -296,7 +265,7 @@ function Layer:_constructor(input)
    -- table, we don't need it anymore.
    self.exit_keymaps = nil
 
-   self:_debug('Layer:_constructor', self)
+   -- self:_debug('Layer:_constructor', self)
 end
 
 ---Activate the Layer
@@ -326,6 +295,7 @@ function Layer:enter()
       end
    })
 
+   self:_debug('Layer:enter', self)
    self:_debug('Layer:enter', vim.api.nvim_get_autocmds({ group = augroup_name }))
 end
 
@@ -347,37 +317,96 @@ function Layer:exit()
    self:_restore_original()
 
    vim.api.nvim_clear_autocmds({ group = augroup_id })
-   self.original = util.unlimited_depth_table()
+
+   self.original = {
+      buf_keymaps = util.unlimited_depth_table(),
+      o  = {}, go = {}, bo = {}, wo = {}
+   }
+
    self.active = false
    _G.active_keymap_layer = nil
 
    self:_debug('Layer:exit', self)
 end
 
----Save original boffer option value and set the new one.
----@param bufnr number|nil buffer id; if `nil` the current buffer used
----@param option string the buffer option to set
----@param value any the value of the option
-function Layer:_set_buf_option(bufnr, option, value)
-   bufnr = bufnr or vim.api.nvim_get_current_buf()
-   if util.tbl_rawget(self.original, 'buf_options', bufnr, option) then
-      return
+---Returns meta-accessor for vim options
+---@param accessor string One from: 'o', 'go', 'bo', 'wo'
+---@return any
+function Layer:_get_meta_accessor(accessor)
+   local function set_buf_option(opt, val)
+      local bufnr = vim.api.nvim_get_current_buf()
+      self.original.bo[bufnr] = self.original.bo[bufnr] or {}
+      if self.original.bo[bufnr][opt] then return end
+      self.original.bo[bufnr][opt] = vim.api.nvim_buf_get_option(bufnr, opt)
+      vim.api.nvim_buf_set_option(bufnr, opt, val)
    end
-   self.original.buf_options[bufnr][option] = vim.bo[bufnr][option]
-   vim.bo[bufnr][option] = value
-end
 
----Save original window option value and set the new one.
----@param winnr number|nil window id; if `nil` the current window used
----@param option string the window option to set
----@param value any the value of the option
-function Layer:_set_win_option(winnr, option, value)
-   winnr = winnr or vim.api.nvim_get_current_win()
-   if util.tbl_rawget(self.original, 'win_options', winnr, option) then
-      return
+   local function set_win_option(opt, val)
+      local winnr = vim.api.nvim_get_current_win()
+      self.original.wo[winnr] = self.original.wo[winnr] or {}
+      if self.original.wo[winnr][opt] then return end
+      self.original.wo[winnr][opt] = vim.api.nvim_win_get_option(winnr, opt)
+      vim.api.nvim_win_set_option(winnr, opt, val)
    end
-   self.original.win_options[winnr][option] = vim.wo[winnr][option]
-   vim.wo[winnr][option] = value
+
+   local ma = {
+      bo = util.make_meta_accessor(
+         function(opt)
+            assert(type(opt) ~= 'number',
+               '[keymap-layer.nvim] "vim.bo[bufnr]" meta-aссessor in config.on_enter() function is forbiden, use "vim.bo" instead')
+            return vim.api.nvim_buf_get_option(0, opt)
+         end,
+         function(opt, val)
+            set_buf_option(opt, val)
+
+            vim.api.nvim_create_autocmd('BufEnter', {
+               group = augroup_id,
+               desc = string.format('set "%s" buffer option', opt),
+               callback = function()
+                  set_buf_option(opt, val)
+               end
+            })
+         end
+      ),
+      wo = util.make_meta_accessor(
+         function(opt)
+            assert(type(opt) ~= 'number',
+               '[keymap-layer.nvim] "vim.wo[winnr]" meta-aссessor in config.on_enter() function is forbiden, use "vim.wo" instead')
+            return vim.api.nvim_win_get_option(0, opt)
+         end,
+         function(opt, val)
+            set_win_option(opt, val)
+
+            vim.api.nvim_create_autocmd('WinEnter', {
+               group = augroup_id,
+               desc = string.format('set "%s" window option', opt),
+               callback = function()
+                  set_win_option(opt, val)
+               end
+            })
+         end
+      ),
+      go = util.make_meta_accessor(
+         function(opt)
+            return vim.api.nvim_get_option_value(opt, { scope = 'global' })
+         end,
+         function(opt, val)
+            self.original.go[opt] = vim.api.nvim_get_option_value(opt, { scope = 'global' })
+            vim.api.nvim_set_option_value(opt, val, { scope = 'global' })
+         end
+      ),
+       o = util.make_meta_accessor(
+         function(opt)
+            return vim.api.nvim_get_option_value(opt, {})
+         end,
+         function(opt, val)
+            self.original.o[opt] = vim.api.nvim_get_option_value(opt, {})
+            vim.api.nvim_set_option_value(opt, val, {})
+         end
+      )
+   }
+
+   return ma[accessor]
 end
 
 function Layer:_normalize_input(input)
@@ -417,7 +446,7 @@ end
 function Layer:_setup_layer_keymaps(bufnr)
    -- If original keymaps for `bufnr` buffer are saved,
    -- then we have already set keymaps for that buffer.
-   if util.tbl_rawget(self.original, 'buf_keymaps', bufnr) then return end
+   if util.tbl_rawget(self.original.buf_keymaps, bufnr) then return end
 
    self:_save_original_keymaps(bufnr)
 
@@ -438,7 +467,7 @@ function Layer:_save_original_keymaps(bufnr)
       for _, map in ipairs(vim.api.nvim_buf_get_keymap(bufnr, mode)) do
          map.lhs = termcodes(map.lhs)
          if keymaps[map.lhs] and
-            not util.tbl_rawget(self.original, 'buf_keymaps', bufnr, mode, map.lhs)
+            not util.tbl_rawget(self.original.buf_keymaps, bufnr, mode, map.lhs)
          then
             self.original.buf_keymaps[bufnr][mode][map.lhs] = {
                rhs = map.rhs or '',
@@ -499,20 +528,30 @@ function Layer:_restore_original()
       end
    end
 
+   -- Restore options
+   for opt, val in pairs(self.original.o) do
+      vim.api.nvim_set_option_value(opt, val, {})
+   end
+
+   -- Restore global options
+   for opt, val in pairs(self.original.go) do
+      vim.api.nvim_set_option_value(opt, val, { scope = 'global' })
+   end
+
    -- Restore buffer options
-   for bufnr, options in pairs(self.original.buf_options) do
+   for bufnr, options in pairs(self.original.bo) do
       if listed_buffers[bufnr] then
-         for option, value in pairs(options) do
-            vim.bo[bufnr][option] = value
+         for opt, val in pairs(options) do
+            vim.api.nvim_buf_set_option(bufnr, opt, val)
          end
       end
    end
 
    -- Restore window options
-   for winnr, options in pairs(self.original.win_options) do
+   for winnr, options in pairs(self.original.wo) do
       if vim.api.nvim_win_is_valid(winnr) then
-         for option, value in pairs(options) do
-            vim.wo[winnr][option] = value
+         for opt, val in pairs(options) do
+            vim.api.nvim_win_set_option(winnr, opt, val)
          end
       end
    end

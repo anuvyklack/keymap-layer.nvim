@@ -59,10 +59,33 @@ function util.tbl_rawget(tbl, ...)
    end
 end
 
+function util.make_meta_accessor(get, set)
+   return setmetatable({}, {
+      __index = not get and nil or function(_, k) return get(k) end,
+      __newindex = not set and nil or function(_, k, v) return set(k, v) end
+   })
+end
+
+function util.disable_meta_accessor(accessor)
+   local function disable()
+      util.warn(string.format(
+         '"vim.%s" meta-accessor is disabled inside config.on_exit() function',
+         accessor))
+   end
+   return util.make_meta_accessor(disable, disable)
+end
+
 function util.warn(msg)
    vim.schedule(function()
       vim.notify_once('[keymap-layer.nvim] '..msg, vim.log.levels.WARN)
    end)
 end
+
+function util.error(msg)
+   vim.schedule(function()
+      vim.notify_once('[keymap-layer.nvim] '..msg, vim.log.levels.ERROR)
+   end)
+end
+
 
 return util
