@@ -61,7 +61,6 @@ function Layer:_constructor(input)
             expr = { opts.expr, 'boolean', true },
             silent = { opts.silent, 'boolean', true },
             nowait = { opts.nowait, 'boolean', true },
-            after_exit = { opts.after_exit, 'boolean', true },
             desc = { opts.desc, 'string', true },
          })
       end
@@ -234,7 +233,6 @@ function Layer:_constructor(input)
             local silent = opts.silent
             local desc = opts.desc
             local nowait = opts.nowait
-            local after_exit = opts.after_exit
 
             if rhs and rhs ~= '<Nop>' then
                vim.keymap.set(mode, self.plug[mode][lhs], rhs, { expr = expr })
@@ -242,17 +240,10 @@ function Layer:_constructor(input)
                self.plug[mode][lhs] = ''
             end
 
-            if after_exit then
-               rhs = table.concat{
-                  self.plug[mode].exit,
-                  self.plug[mode][lhs],
-               }
-            else
-               rhs = table.concat{
-                  self.plug[mode][lhs],
-                  self.plug[mode].exit,
-               }
-            end
+            rhs = table.concat{
+               self.plug[mode].exit,
+               self.plug[mode][lhs],
+            }
 
             self.layer_keymaps[mode][lhs] =
                { rhs, { nowait = nowait, silent = silent, desc = desc } }

@@ -33,7 +33,6 @@ On exiting layer the original keybindings become available again like nothing ha
         * [`opts`](#opts)
             * [`expr`, `silent`, `desc`](#expr-silent-desc)
             * [`nowait`](#nowait)
-            * [`after_exit`](#after_exit)
     * [`config` table](#config-table)
         * [`on_enter` and `on_exit`](#on_enter-and-on_exit)
             * [meta-accessors](#meta-accessors)
@@ -139,63 +138,6 @@ exit = {
 ```
 
 which will exit layer, without waiting `&timeoutlen` milliseconds for possible continuation.
-
-
-##### `after_exit`
-`boolean`
-
-**This is exclusive `exit` table key.**
-
-By default, when you press the exit key, Layer executes in the following order:
-
-1. `rhs` of the keymap;
-2. `config.on_exit()` function (passed in `config` table, see below);
-3. restore original keymaps.
-
-This option allows to change this order the next way:
-
-1. `config.on_exit()` function (passed in `config` table, see below);
-2. restore original keymaps;
-3. `rhs` of the keymap.
-
-This is always when `rhs` opens new buffer with custom buffer local keymaps. 
-
-For example, exit layer and open [Neogit](https://github.com/TimUntersberger/neogit).
-```lua
-exit = {
-    { 'n', '<Enter>', '<cmd>Neogit<CR>', { after_exit = true } }
-}
-```
-Without this flag **Neogit** opens its buffer in the Layer scope,
-and then happens two competing processes in undefined order: Layer tries to save the
-original keymaps and set its own, and Neogit tries to set its own keymaps.
-Then if Layer managed first, on exiting, it will restore keymaps saved before Neogit
-set its own, and Neogit keymaps will be lost: you will get Neogit buffer without Neogit
-keybindings. This is shown more clearly in the diagram below.
-
-```
-after_exit = false
-
-      Press        Neogit opens      Layer saves      Neogit set        Layer restores
-     exit key       new buffer         keymaps         keymaps        keymaps saved in (x)
-        :               :                 :               :                   :
---------o---------------o----------------(x)--------------o-------------------o---------->
-time
-```
-
-For this case, this flag was developed: you first exit the Layer and then open Neogit, and
-they don't interfere each other.
-
-```
-after_exit = true
-
-             Press             Layer exit and          Neogit opens new buffer
-            exit key          restores keymaps             and set keymaps
-               :                     :                          :
----------------o---------------------o--------------------------o------------------------>
-time
-```
-
 
 ### `config` table
 
