@@ -39,6 +39,7 @@ On exiting layer the original keybindings become available again like nothing ha
         * [`timeout`](#timeout)
 * [Global variable](#global-variable)
 * [Layer object](#layer-object)
+* [Make buffer unmodifiable while layer is active](#make-buffer-unmodifiable-while-layer-is-active)
 
 <!-- vim-markdown-toc -->
 
@@ -147,17 +148,14 @@ which will exit layer, without waiting `&timeoutlen` milliseconds for possible c
 `on_enter`/`on_exit` is a function or list of function, that will be executed
 on entering / exiting the layer.
 
-Inside the `on_enter` functions the `vim.bo` and `vim.wo` [meta-accessors](https://github.com/nanotee/nvim-lua-guide#using-meta-accessors)
-are redefined to work the way you think they should. If you want some option value to be
-temporary changed while Layer is active, you need just set it with `vim.bo`/`vim.wo`
-meta-accessor. And thats it. All other will be done automatically in the backstage.
-
 ##### meta-accessors
 
-Inside the `on_enter` function, the `vim.bo` and `vim.wo` [meta-accessors](https://github.com/nanotee/nvim-lua-guide#using-meta-accessors)
-are redefined to work the way you think they should. If you want some option value to be
-temporary changed while Layer is active, you need just set it with `vim.bo`/`vim.wo`
-meta-accessor. And that's it. All others will be done automatically in the backstage.
+Inside the `on_enter` functions the `vim.o`, `vim.go`, `vim.bo` and `vim.wo`
+[meta-accessors](https://github.com/nanotee/nvim-lua-guide#using-meta-accessors)
+are redefined to work the way you think they should.  If you want some option to be
+temporary changed while Layer is active, you need just set it with one of this
+meta-accessor.  And thats it. All other will be done automatically in the backstage.
+
 
 For example, temporary unset `modifiable` (local to buffer) option while Layer is active:
 ```lua
@@ -192,8 +190,9 @@ Beside constructor, Layer object has next public methods:
 - `layer:enter()` : activate layer;
 - `layer:exit()` : deactivate layer.
 
----------------------------------------------------------------------------------------
-To disable the possibility to edit text while layer is active, you can either manually
+## Make buffer unmodifiable while layer is active
+
+To disable the possibility to edit buffer while layer is active, you can either manually
 unmap desired keys with next snippet:
 
 ```lua
@@ -221,7 +220,7 @@ KeyLayer({
 })
 ```
 
-Or disable `modifiable` option:
+or disable `modifiable` option:
 ```lua
 KeyLayer({
    config = {
