@@ -111,7 +111,7 @@ function Layer:_constructor(input)
       env.vim.bo = self:_get_meta_accessor('bo')
       env.vim.wo = self:_get_meta_accessor('wo')
 
-      for _, fun in ipairs(self.config.on_enter) do
+      for _, fun in pairs(self.config.on_enter) do
          setfenv(fun, env)
       end
    end
@@ -128,7 +128,7 @@ function Layer:_constructor(input)
       env.vim.bo = util.disable_meta_accessor('bo')
       env.vim.wo = util.disable_meta_accessor('wo')
 
-      for _, fun in ipairs(self.config.on_exit) do
+      for _, fun in pairs(self.config.on_exit) do
          setfenv(fun, env)
       end
    end
@@ -268,7 +268,7 @@ function Layer:enter()
    _G.active_keymap_layer = self
 
    if self.config.on_enter then
-      for _, fun in ipairs(self.config.on_enter) do
+      for _, fun in pairs(self.config.on_enter) do
          fun()
       end
    end
@@ -300,7 +300,7 @@ function Layer:exit()
    end
 
    if self.config.on_exit then
-      for _, fun in ipairs(self.config.on_exit) do
+      for _, fun in pairs(self.config.on_exit) do
          fun()
       end
    end
