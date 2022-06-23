@@ -195,7 +195,10 @@ function Layer:_constructor(input)
                   -- we have moved one character back, and need to move one
                   -- character forward to return in place.
                   if operator == 'c' then
-                     vim.api.nvim_feedkeys('l', 'tn', false)
+                     local cursor_column = vim.api.nvim_win_get_cursor(0)[2]
+                     if cursor_column > 0 then
+                        vim.api.nvim_feedkeys('l', 'tn', false)
+                     end
                   end
 
                   -- Execute operator + motion.
