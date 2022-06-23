@@ -37,6 +37,7 @@ On exiting layer the original keybindings become available again like nothing ha
         * [`on_enter` and `on_exit`](#on_enter-and-on_exit)
             * [meta-accessors](#meta-accessors)
         * [`timeout`](#timeout)
+        * [`buffer`](#buffer)
 * [Global variable](#global-variable)
 * [Layer object](#layer-object)
 * [Make buffer unmodifiable while layer is active](#make-buffer-unmodifiable-while-layer-is-active)
@@ -175,6 +176,11 @@ And that's all, nothing more.
 The `timeout` option starts a timer for the corresponding amount of seconds milliseconds
 that disables the layer.  Calling any layer key will refresh the timer.
 If set to `true`, the timer will be set to `timeoutlen` option value (see `:help timeoutlen`).
+
+#### `buffer`
+`true | number`
+
+Define layer only for particular buffer. If `true` — the current buffer will be used.
 
 ## Global variable
 

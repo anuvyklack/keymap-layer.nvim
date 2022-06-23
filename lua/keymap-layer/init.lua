@@ -68,7 +68,9 @@ function Layer:_constructor(input)
    if input.config then
       vim.validate({
          on_enter = { input.config.on_enter, { 'function', 'table' }, true },
-         on_exit  = { input.config.on_exit,  { 'function', 'table' }, true }
+         on_exit = { input.config.on_exit, { 'function', 'table' }, true },
+         timeout = { input.config.timeout, { 'boolean', 'number' }, true },
+         buffer = { input.config.buffer, { 'boolean', 'number' }, true }
       })
    end
 
@@ -76,8 +78,16 @@ function Layer:_constructor(input)
    self.id = util.generate_id() -- Unique ID for each Layer.
    self.name = input.name
    self.config = input.config or {}
+
    if type(self.config.timeout) == 'boolean' and self.config.timeout then
       self.config.timeout = vim.o.timeoutlen
+   end
+
+   -- make Layer buffer local
+   if input.config.buffer and type(input.config.buffer) == 'number' then
+      self.config.buffer = input.config.buffer
+   elseif input.config.buffer then
+      self.config.buffer = vim.api.nvim_get_current_buf()
    end
 
    -- Everything to restore when exit Layer.
@@ -161,7 +171,7 @@ function Layer:_constructor(input)
       self.exit_keymaps = {}
       for mode, _ in pairs(self.layer_keymaps) do
          self.exit_keymaps[mode] = {}
-         self.exit_keymaps[mode]['<Esc>'] = { '<Nop>', { buffer = true } }
+         self.exit_keymaps[mode]['<Esc>'] = { '<Nop>', {} }
       end
    end
 
@@ -179,7 +189,8 @@ function Layer:_constructor(input)
             local nowait = opts.nowait
 
             if rhs ~= '<Nop>' then
-               vim.keymap.set(mode, self.plug[mode]['entrance_'..lhs], rhs, { expr = expr })
+               vim.keymap.set(mode, self.plug[mode]['entrance_'..lhs], rhs,
+                              { expr = expr, buffer = self.config.buffer })
             else
                self.plug[mode]['entrance_'..lhs] = ''
             end
@@ -208,13 +219,18 @@ function Layer:_constructor(input)
                   self:enter() -- Enter layer
                end
 
-               vim.keymap.set(mode, lhs, execute_operator_and_enter,
-                              { nowait = nowait, silent = silent, desc = desc })
+               vim.keymap.set(mode, lhs, execute_operator_and_enter, {
+                  nowait = nowait, silent = silent, desc = desc,
+                  buffer = self.config.buffer
+               })
             else
                vim.keymap.set(mode, lhs, table.concat{
                      self.plug[mode].enter,
                      self.plug[mode]['entrance_'..lhs],
-                  }, { nowait = nowait, silent = silent, desc = desc })
+                  }, {
+                     nowait = nowait, silent = silent, desc = desc,
+                     buffer = self.config.buffer
+                  })
             end
          end
       end
@@ -257,9 +273,9 @@ function Layer:_constructor(input)
          for lhs, map in pairs(keymaps) do
             local rhs, opts = map[1], map[2]
 
-            local expr = opts.expr
+            local expr   = opts.expr
             local silent = opts.silent
-            local desc = opts.desc
+            local desc   = opts.desc
             local nowait = opts.nowait
 
             if rhs and rhs ~= '<Nop>' then
@@ -301,18 +317,21 @@ function Layer:enter()
       end
    end
 
-   local bufnr = vim.api.nvim_get_current_buf()
+   local bufnr = self.config.buffer or vim.api.nvim_get_current_buf()
+
    self:_setup_layer_keymaps(bufnr)
    self:_timer()
 
    -- Apply Layer keybindings on every visited buffer while Layer is active.
-   vim.api.nvim_create_autocmd('BufEnter', {
-      group = augroup_id,
-      desc = 'setup Layer keymaps',
-      callback = function(input)
-         self:_setup_layer_keymaps(input.buf)
-      end
-   })
+   if not self.config.buffer then
+      vim.api.nvim_create_autocmd('BufEnter', {
+         group = augroup_id,
+         desc = 'setup Layer keymaps',
+         callback = function(input)
+            self:_setup_layer_keymaps(input.buf)
+         end
+      })
+   end
 
    self:_debug('Layer:enter', self)
    self:_debug('Layer:enter', vim.api.nvim_get_autocmds({ group = augroup_name }))
@@ -378,13 +397,15 @@ function Layer:_get_meta_accessor(accessor)
          function(opt, val)
             set_buf_option(opt, val)
 
-            vim.api.nvim_create_autocmd('BufEnter', {
-               group = augroup_id,
-               desc = string.format('set "%s" buffer option', opt),
-               callback = function()
-                  set_buf_option(opt, val)
-               end
-            })
+            if not self.config.buffer then
+               vim.api.nvim_create_autocmd('BufEnter', {
+                  group = augroup_id,
+                  desc = string.format('set "%s" buffer option', opt),
+                  callback = function()
+                     set_buf_option(opt, val)
+                  end
+               })
+            end
          end
       ),
       wo = util.make_meta_accessor(
@@ -396,13 +417,15 @@ function Layer:_get_meta_accessor(accessor)
          function(opt, val)
             set_win_option(opt, val)
 
-            vim.api.nvim_create_autocmd('WinEnter', {
-               group = augroup_id,
-               desc = string.format('set "%s" window option', opt),
-               callback = function()
-                  set_win_option(opt, val)
-               end
-            })
+            if not self.config.buffer then
+               vim.api.nvim_create_autocmd('WinEnter', {
+                  group = augroup_id,
+                  desc = string.format('set "%s" window option', opt),
+                  callback = function()
+                     set_win_option(opt, val)
+                  end
+               })
+            end
          end
       ),
       go = util.make_meta_accessor(
@@ -474,6 +497,7 @@ function Layer:_setup_layer_keymaps(bufnr)
          local rhs, opts = map[1], map[2]
          opts.buffer = bufnr
          vim.keymap.set(mode, lhs, rhs, opts)
+         opts.buffer = nil
       end
    end
 end
