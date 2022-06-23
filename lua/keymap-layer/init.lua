@@ -184,10 +184,35 @@ function Layer:_constructor(input)
                self.plug[mode]['entrance_'..lhs] = ''
             end
 
-            vim.keymap.set(mode, lhs, table.concat{
-               self.plug[mode].enter,
-               self.plug[mode]['entrance_'..lhs],
-            }, { nowait = nowait, silent = silent, desc = desc })
+            if mode == 'o' then -- operator-pending mode
+               local function execute_operator_and_enter()
+                  local operator = vim.v.operator
+
+                  -- Exit operator-pending mode.
+                  vim.api.nvim_feedkeys(termcodes('<Esc>'), 'tn', false)
+
+                  -- If operator was 'c' (change) then on exiting Insert mode
+                  -- we have moved one character back, and need to move one
+                  -- character forward to return in place.
+                  if operator == 'c' then
+                     vim.api.nvim_feedkeys('l', 'tn', false)
+                  end
+
+                  -- Execute operator + motion.
+                  local keys = termcodes(operator..self.plug[mode]['entrance_'..lhs])
+                  vim.api.nvim_feedkeys(keys, '', false)
+
+                  self:enter() -- Enter layer
+               end
+
+               vim.keymap.set(mode, lhs, execute_operator_and_enter,
+                              { nowait = nowait, silent = silent, desc = desc })
+            else
+               vim.keymap.set(mode, lhs, table.concat{
+                     self.plug[mode].enter,
+                     self.plug[mode]['entrance_'..lhs],
+                  }, { nowait = nowait, silent = silent, desc = desc })
+            end
          end
       end
    end
