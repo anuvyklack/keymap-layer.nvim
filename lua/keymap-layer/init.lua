@@ -540,19 +540,11 @@ end
 function Layer:_restore_original()
    if not self.active then return end
 
-   ---Set with 'listed' buffers.
-   local listed_buffers = {}
-   for _, b in ipairs(vim.api.nvim_list_bufs()) do
-      if vim.fn.buflisted(b) == 1 then
-         listed_buffers[b] = true
-      end
-   end
-
    -- Restore keymaps
    for mode, keymaps in pairs(self.layer_keymaps) do
       for lhs, _ in pairs(keymaps) do
          for bufnr, _ in pairs(self.original.buf_keymaps) do
-            if listed_buffers[bufnr] then  -- if `bufnr` buffer still exists
+            if vim.api.nvim_buf_is_valid(bufnr) then
                local map = util.tbl_rawget(self.original.buf_keymaps, bufnr, mode, lhs)
                if type(map) == 'table' then
                   vim.api.nvim_buf_set_keymap(bufnr, mode, lhs, map.rhs, {
@@ -583,7 +575,7 @@ function Layer:_restore_original()
 
    -- Restore buffer options
    for bufnr, options in pairs(self.original.bo) do
-      if listed_buffers[bufnr] then
+      if vim.api.nvim_buf_is_valid(bufnr) then
          for opt, val in pairs(options) do
             vim.api.nvim_buf_set_option(bufnr, opt, val)
          end
