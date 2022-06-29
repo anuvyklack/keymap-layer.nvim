@@ -299,8 +299,6 @@ function Layer:_constructor(input)
    -- Since now all exit keymaps are incorporated into `self.layer_keymaps`
    -- table, we don't need it anymore.
    self.exit_keymaps = nil
-
-   -- self:_debug('Layer:_constructor', self)
 end
 
 ---Activate the Layer
@@ -332,9 +330,6 @@ function Layer:enter()
          end
       })
    end
-
-   self:_debug('Layer:enter', self)
-   self:_debug('Layer:enter', vim.api.nvim_get_autocmds({ group = augroup_name }))
 end
 
 ---Exit the Layer and restore all previous keymaps
@@ -363,8 +358,6 @@ function Layer:exit()
 
    self.active = false
    _G.active_keymap_layer = nil
-
-   self:_debug('Layer:exit', self)
 end
 
 ---Returns meta-accessor for vim options
@@ -606,10 +599,7 @@ end
 
 function Layer:_debug(...)
    if self.config.debug then
-      print('---------------------------------[keymap-layer]---------------------------------')
-      for _, line in ipairs({...}) do
-         vim.pretty_print(line)
-      end
+      vim.pretty_print(...)
    end
 end
 
