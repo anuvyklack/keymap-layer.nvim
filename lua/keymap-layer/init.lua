@@ -194,7 +194,7 @@ function Layer:_constructor(input)
                   local operator = vim.v.operator
 
                   -- Exit operator-pending mode.
-                  vim.api.nvim_feedkeys(termcodes('<Esc>'), 'tn', false)
+                  vim.api.nvim_feedkeys(termcodes('<Esc>'), 'in', false)
 
                   local key = util.tbl_rawget(self.plug, mode, 'entrance-'..lhs)
                   if key then
@@ -204,7 +204,7 @@ function Layer:_constructor(input)
                      if operator == 'c' then
                         local cursor_column = vim.api.nvim_win_get_cursor(0)[2]
                         if cursor_column > 0 then
-                           vim.api.nvim_feedkeys('l', 'tn', false)
+                           vim.api.nvim_feedkeys('l', 'in', false)
                         end
                      end
                      -- Execute operator + motion.
