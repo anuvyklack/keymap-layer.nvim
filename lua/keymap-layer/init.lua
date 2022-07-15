@@ -1,5 +1,5 @@
 local Class = require('keymap-layer.class')
-
+local options = require('keymap-layer.options')
 local util = require('keymap-layer.util')
 local termcodes = util.termcodes
 
@@ -75,17 +75,21 @@ function Layer:_constructor(input)
    self.id = util.generate_id() -- Unique ID for each Layer.
    self.name = input.name
    self.config = input.config or {}
-
-   if type(self.config.timeout) == 'boolean' and self.config.timeout then
-      self.config.timeout = vim.o.timeoutlen
+   if self.config.timeout == true then
+      self.config.timeout = vim.o.timeoutlen --[[@as integer]]
    end
-
-   -- make Layer buffer local
-   if input.config.buffer and type(input.config.buffer) == 'number' then
-      self.config.buffer = input.config.buffer
-   elseif input.config.buffer then
+   if self.config.buffer == true then
       self.config.buffer = vim.api.nvim_get_current_buf()
    end
+   if type(self.config.on_enter) == 'function' then
+      self.config.on_enter = { self.config.on_enter }
+   end
+   if type(self.config.on_exit) == 'function' then
+      self.config.on_exit = { self.config.on_exit }
+   end
+
+   self.namespace_id = vim.api.nvim_create_namespace('hydra.layer')
+   self.options = options('hydra.layer_options') -- meta-accessors
 
    -- Everything to restore when exit Layer.
    self.original = {
@@ -93,16 +97,25 @@ function Layer:_constructor(input)
       o  = {}, go = {}, bo = {}, wo = {}
    }
 
-   -- HACK
-   -- I replace in the backstage the `vim.bo` table called inside
+   -- HACK: I replace in the backstage the `vim.bo` table called inside
    -- `self.config.on_enter()` function with my own.
    if self.config.on_enter then
-      if type(self.config.on_enter) == 'function' then
-         self.config.on_enter = { self.config.on_enter }
-      end
+      getmetatable(self.options.bo).__index = util.add_hook_before(
+         getmetatable(self.options.bo).__index,
+         function(_, opt)
+            assert(type(opt) ~= 'number',
+               '[Hydra] vim.bo[bufnr] meta-aссessor in config.on_enter() function is forbiden, use "vim.bo" instead')
+         end
+      )
+      getmetatable(self.options.wo).__index = util.add_hook_before(
+         getmetatable(self.options.wo).__index,
+         function(_, opt)
+            assert(type(opt) ~= 'number',
+               '[Hydra] vim.wo[winnr] meta-aссessor in config.on_enter() function is forbiden, use "vim.wo" instead')
+         end
+      )
 
-      -- HACK
-      -- The `vim.deepcopy()` rize an error if try to copy `getfenv()`
+      -- HACK: The `vim.deepcopy()` rize an error if try to copy `getfenv()`
       -- environment with next snippet:
       -- ```
       --    local env = vim.deepcopy(getfenv())
@@ -112,24 +125,20 @@ function Layer:_constructor(input)
       -- original table.
       local env = vim.tbl_deep_extend('force', getfenv(), {
          vim = { o = {}, go = {}, bo = {}, wo = {} }
-      })
-      env.vim.o  = self:_get_meta_accessor('o')
-      env.vim.go = self:_get_meta_accessor('go')
-      env.vim.bo = self:_get_meta_accessor('bo')
-      env.vim.wo = self:_get_meta_accessor('wo')
+      }) --[[@as table]]
+      env.vim.o  = self.options.o
+      env.vim.go = self.options.go
+      env.vim.bo = self.options.bo
+      env.vim.wo = self.options.wo
 
       for _, fun in pairs(self.config.on_enter) do
          setfenv(fun, env)
       end
    end
    if self.config.on_exit then
-      if type(self.config.on_exit) == 'function' then
-         self.config.on_exit = { self.config.on_exit }
-      end
-
       local env = vim.tbl_deep_extend('force', getfenv(), {
          vim = { o = {}, go = {}, bo = {}, wo = {} }
-      })
+      }) --[[@as table]]
       env.vim.o  = util.disable_meta_accessor('o')
       env.vim.go = util.disable_meta_accessor('go')
       env.vim.bo = util.disable_meta_accessor('bo')

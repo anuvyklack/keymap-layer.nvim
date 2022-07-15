@@ -1,6 +1,13 @@
 local util = {}
 local id = 0
 
+---@param msg string
+function util.warn(msg)
+   vim.schedule(function()
+      vim.notify_once('[Hydra] ' .. msg, vim.log.levels.WARN)
+   end)
+end
+
 ---Generate ID
 ---@return integer
 function util.generate_id()
@@ -66,26 +73,30 @@ function util.make_meta_accessor(get, set)
    })
 end
 
-function util.disable_meta_accessor(accessor)
+---@param accessor_name string
+---@return MetaAccessor
+function util.disable_meta_accessor(accessor_name)
    local function disable()
       util.warn(string.format(
          '"vim.%s" meta-accessor is disabled inside config.on_exit() function',
-         accessor))
+         accessor_name))
    end
+
    return util.make_meta_accessor(disable, disable)
 end
 
-function util.warn(msg)
-   vim.schedule(function()
-      vim.notify_once('[keymap-layer.nvim] '..msg, vim.log.levels.WARN)
-   end)
+---@param func? function
+---@param new_fn function
+---@return function
+function util.add_hook_before(func, new_fn)
+   if func then
+      return function(...)
+         new_fn(...)
+         return func(...)
+      end
+   else
+      return new_fn
+   end
 end
-
-function util.error(msg)
-   vim.schedule(function()
-      vim.notify_once('[keymap-layer.nvim] '..msg, vim.log.levels.ERROR)
-   end)
-end
-
 
 return util
