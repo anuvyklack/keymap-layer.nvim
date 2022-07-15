@@ -1,36 +1,33 @@
-local util = require 'keymap-layer.util'
+local Class = require('keymap-layer.class')
 
----@type function
+local util = require('keymap-layer.util')
 local termcodes = util.termcodes
 
 local augroup_name = 'Layer'
 local augroup_id = vim.api.nvim_create_augroup(augroup_name, { clear = true })
 
----Currently active `keymap.Layer` object if any.
----@type keymap.Layer
+---Currently active layer
 _G.active_keymap_layer = nil
 
 ---@class keymap.Layer
----@field active boolean If mode is active or not.
----@field enter_keymaps table The keymaps to enter the Layer.
----@field layer_keymaps table The keymaps that are rebounded while Layer is active.
----@field original table Everything to restore when Layer exit.
-local Layer = {}
-Layer.__index = Layer
-setmetatable(Layer, {
-   ---The `new` method which created a new object and call constructor for it.
-   ---@param ... table
-   ---@return keymap.Layer
-   __call = function(_, ...)
-      local obj = setmetatable({}, Layer)
-      obj:_constructor(...)
-      return obj
-   end
-})
+---@field active boolean
+---@field name? string
+---@field config keymap.LayerConfig
+---@field enter_keymaps table
+---@field layer_keymaps table
+---@field options keymap.layer.Options
+---@field timer libuv.Timer | nil
+---@field saved_keymaps table
+local Layer = Class()
 
----The Layer constructor
+---@class keymap.LayerConfig
+---@field debug? boolean
+---@field buffer? integer
+---@field timeout? integer
+---@field on_enter? table<integer, function>
+---@field on_exit? table<integer, function>
+
 ---@param input table
----@return keymap.Layer
 function Layer:_constructor(input)
    if input.enter then
       for _, keymap in ipairs(input.enter) do
