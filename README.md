@@ -193,7 +193,7 @@ active layer.  It can also be used for statusline notification, or anything else
 
 Beside constructor, Layer object has next public methods:
 
-- `layer:enter()` : activate layer;
+- `layer:activate()` : activate layer;
 - `layer:exit()` : deactivate layer.
 
 ## Make buffer unmodifiable while layer is active

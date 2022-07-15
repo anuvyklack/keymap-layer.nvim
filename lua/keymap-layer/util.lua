@@ -1,5 +1,4 @@
 local util = {}
-local id = 0
 
 ---@param msg string
 function util.warn(msg)
@@ -8,6 +7,7 @@ function util.warn(msg)
    end)
 end
 
+local id = 0
 ---Generate ID
 ---@return integer
 function util.generate_id()
@@ -16,10 +16,16 @@ function util.generate_id()
 end
 
 ---Shortcut to `vim.api.nvim_replace_termcodes`
+---
+---In the output of the `nvim_get_keymap` and `nvim_buf_get_keymap`
+---functions some keycodes are replaced, for example: `<leader>` and
+---some are not, like `<Tab>`.  So to avoid this incompatibility better
+---to apply `termcodes` function on both `lhs` and the received keymap
+---before comparison.
 ---@param keys string
 ---@return string
 function util.termcodes(keys)
-   return vim.api.nvim_replace_termcodes(keys, true, true, true)
+   return vim.api.nvim_replace_termcodes(keys, true, true, true) --[[@as string]]
 end
 
 -- Recursive subtables
@@ -35,21 +41,10 @@ function util.unlimited_depth_table()
    return setmetatable({}, mt)
 end
 
----Recursively unset metatable for the input table and all nested tables.
----@param tbl table
-function util.deep_unsetmetatable(tbl)
-   for _, subtbl in pairs(tbl) do
-      setmetatable(tbl, nil)
-      if type(subtbl) == 'table' then
-         util.deep_unsetmetatable(subtbl)
-      end
-   end
-end
-
 ---Like `vim.tbl_get` but returns the raw value (got with `rawget` function,
 ---ignoring  all metatables on the way).
----@param tbl table
----@param ... any
+---@param tbl table | nil
+---@param ... any keys
 ---@return any
 ---@see :help vim.tbl_get
 function util.tbl_rawget(tbl, ...)
@@ -66,6 +61,20 @@ function util.tbl_rawget(tbl, ...)
    end
 end
 
+---Deep unset metatable for input table and all nested tables.
+---@param tbl table
+function util.deep_unsetmetatable(tbl)
+   for _, subtbl in pairs(tbl) do
+      setmetatable(tbl, nil)
+      if type(subtbl) == 'table' then
+         util.deep_unsetmetatable(subtbl)
+      end
+   end
+end
+
+---@param get function
+---@param set function
+---@return MetaAccessor
 function util.make_meta_accessor(get, set)
    return setmetatable({}, {
       __index = not get and nil or function(_, k) return get(k) end,

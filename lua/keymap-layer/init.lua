@@ -91,11 +91,7 @@ function Layer:_constructor(input)
    self.namespace_id = vim.api.nvim_create_namespace('hydra.layer')
    self.options = options('hydra.layer_options') -- meta-accessors
 
-   -- Everything to restore when exit Layer.
-   self.original = {
-      buf_keymaps = util.unlimited_depth_table(),
-      o  = {}, go = {}, bo = {}, wo = {}
-   }
+   self.saved_keymaps = {}
 
    -- HACK: I replace in the backstage the `vim.bo` table called inside
    -- `self.config.on_enter()` function with my own.
@@ -155,7 +151,7 @@ function Layer:_constructor(input)
       __index = function (t, mode)
          t[mode] = setmetatable({}, {
             __index = function (t_mode, key)
-               t_mode[key] = ('<Plug>(Layer%s_%s)'):format(self.id, key)
+               t_mode[key] = ('<Plug>(Layer%s-%s)'):format(self.id, key)
                return t_mode[key]
             end
          })
@@ -163,80 +159,79 @@ function Layer:_constructor(input)
       end
    })
 
-   if input.layer_keymaps then
-      -- When input was passed already in the internal form.
+   local exit_keymaps
+   if not input.layer_keymaps then
+      self.enter_keymaps, self.layer_keymaps, exit_keymaps =
+         self:_normalize_input(input.enter, input.layer, input.exit)
+   else -- input was passed already in the internal form.
       self.enter_keymaps = input.enter_keymaps
       self.layer_keymaps = input.layer_keymaps
-      self.exit_keymaps  = input.exit_keymaps
-   else
-      self:_normalize_input(input)
+      exit_keymaps  = input.exit_keymaps
    end
 
    -- Setup <Esc> key to exit the Layer if no one exit key have been passed.
-   if not self.exit_keymaps then
-      self.exit_keymaps = {}
+   if not exit_keymaps then
+      exit_keymaps = {}
       for mode, _ in pairs(self.layer_keymaps) do
-         self.exit_keymaps[mode] = {}
-         self.exit_keymaps[mode]['<Esc>'] = { '<Nop>', {} }
+         exit_keymaps[mode] = {}
+         exit_keymaps[mode]['<Esc>'] = { '<Nop>', {} }
       end
    end
 
    -- Setup keybindings to enter Layer
    if self.enter_keymaps then
       for mode, keymaps in pairs(self.enter_keymaps) do
-         vim.keymap.set(mode, self.plug[mode].enter, function() self:enter() end)
-
          for lhs, map in pairs(keymaps) do
             local rhs, opts = map[1], map[2]
 
-            local expr   = opts.expr
-            local silent = opts.silent
-            local desc   = opts.desc
-            local nowait = opts.nowait
-
-            if rhs ~= '<Nop>' then
-               vim.keymap.set(mode, self.plug[mode]['entrance_'..lhs], rhs,
-                              { expr = expr, buffer = self.config.buffer })
-            else
-               self.plug[mode]['entrance_'..lhs] = ''
+            if rhs and rhs ~= '<Nop>' then
+               vim.keymap.set(mode, self.plug[mode]['entrance-'..lhs], rhs,
+                              { expr = opts.expr, buffer = self.config.buffer })
             end
 
             if mode == 'o' then -- operator-pending mode
-               local function execute_operator_and_enter()
+               vim.keymap.set(mode, lhs, function()
                   local operator = vim.v.operator
 
                   -- Exit operator-pending mode.
                   vim.api.nvim_feedkeys(termcodes('<Esc>'), 'tn', false)
 
-                  -- If operator was 'c' (change) then on exiting Insert mode
-                  -- we have moved one character back, and need to move one
-                  -- character forward to return in place.
-                  if operator == 'c' then
-                     local cursor_column = vim.api.nvim_win_get_cursor(0)[2]
-                     if cursor_column > 0 then
-                        vim.api.nvim_feedkeys('l', 'tn', false)
+                  local key = util.tbl_rawget(self.plug, mode, 'entrance-'..lhs)
+                  if key then
+                     -- If operator was 'c' (change) then on exiting Insert mode
+                     -- we have moved one character back, and need to move one
+                     -- character forward to return in place.
+                     if operator == 'c' then
+                        local cursor_column = vim.api.nvim_win_get_cursor(0)[2]
+                        if cursor_column > 0 then
+                           vim.api.nvim_feedkeys('l', 'tn', false)
+                        end
                      end
+                     -- Execute operator + motion.
+                     vim.api.nvim_feedkeys(termcodes(operator..key), '', false)
                   end
 
-                  -- Execute operator + motion.
-                  local keys = termcodes(operator..self.plug[mode]['entrance_'..lhs])
-                  vim.api.nvim_feedkeys(keys, '', false)
-
-                  self:enter() -- Enter layer
-               end
-
-               vim.keymap.set(mode, lhs, execute_operator_and_enter, {
-                  nowait = nowait, silent = silent, desc = desc,
-                  buffer = self.config.buffer
+                  self:activate() -- Enter layer
+               end, {
+                  buffer = self.config.buffer,
+                  nowait = opts.nowait,
+                  silent = opts.silent,
+                  desc = opts.desc
                })
             else
-               vim.keymap.set(mode, lhs, table.concat{
-                     self.plug[mode].enter,
-                     self.plug[mode]['entrance_'..lhs],
-                  }, {
-                     nowait = nowait, silent = silent, desc = desc,
-                     buffer = self.config.buffer
-                  })
+               vim.keymap.set(mode, lhs, function()
+                  self:activate()
+                  local key = util.tbl_rawget(self.plug, mode, 'entrance-'..lhs)
+                  if key then
+                     key = termcodes(self.plug[mode]['entrance-'..lhs])
+                     vim.api.nvim_feedkeys(key, '', false)
+                  end
+               end, {
+                  buffer = self.config.buffer,
+                  nowait = opts.nowait,
+                  silent = opts.silent,
+                  desc = opts.desc
+               })
             end
          end
       end
@@ -253,27 +248,26 @@ function Layer:_constructor(input)
          for lhs, map in pairs(keymaps) do
             local rhs, opts = map[1], map[2]
 
-            local expr   = opts.expr
-            local silent = opts.silent
-            local desc   = opts.desc
-            local nowait = opts.nowait
-
-            vim.keymap.set(mode, self.plug[mode][lhs], rhs, { expr = expr })
+            vim.keymap.set(mode, self.plug[mode][lhs], rhs, { expr = opts.expr })
 
             self.layer_keymaps[mode][lhs] = {
                table.concat{
                   self.plug[mode].timer,
                   self.plug[mode][lhs]
                },
-               { nowait = nowait, silent = silent, desc = desc }
+               {
+                  nowait = opts.nowait,
+                  silent = opts.silent,
+                  desc = opts.desc
+               }
             }
          end
       end
    end
 
    -- Setup keybindings to exit Layer
-   if self.exit_keymaps then
-      for mode, keymaps in pairs(self.exit_keymaps) do
+   if exit_keymaps then
+      for mode, keymaps in pairs(exit_keymaps) do
          vim.keymap.set(mode, self.plug[mode].exit, function() self:exit() end)
 
          for lhs, map in pairs(keymaps) do
@@ -301,19 +295,15 @@ function Layer:_constructor(input)
          end
       end
    end
-
-   -- Since now all exit keymaps are incorporated into `self.layer_keymaps`
-   -- table, we don't need it anymore.
-   self.exit_keymaps = nil
 end
 
----Activate the Layer
-function Layer:enter()
+---Activate layer
+function Layer:activate()
    if _G.active_keymap_layer and _G.active_keymap_layer.id == self.id then
       return
    end
-   self.active = true
    _G.active_keymap_layer = self
+   self.active = true
 
    if self.config.on_enter then
       for _, fun in pairs(self.config.on_enter) do
@@ -322,8 +312,8 @@ function Layer:enter()
    end
 
    local bufnr = self.config.buffer or vim.api.nvim_get_current_buf()
+   self:_setup_keymaps(bufnr)
 
-   self:_setup_layer_keymaps(bufnr)
    self:_timer()
 
    -- Apply Layer keybindings on every visited buffer while Layer is active.
@@ -332,7 +322,7 @@ function Layer:enter()
          group = augroup_id,
          desc = 'setup Layer keymaps',
          callback = function(input)
-            self:_setup_layer_keymaps(input.buf)
+            self:_setup_keymaps(input.buf)
          end
       })
    end
@@ -353,143 +343,46 @@ function Layer:exit()
       end
    end
 
-   self:_restore_original()
+   self:_restore_keymaps()
+   self.options:restore()
 
    vim.api.nvim_clear_autocmds({ group = augroup_id })
-
-   self.original = {
-      buf_keymaps = util.unlimited_depth_table(),
-      o  = {}, go = {}, bo = {}, wo = {}
-   }
 
    self.active = false
    _G.active_keymap_layer = nil
 end
 
----Returns meta-accessor for vim options
----@param accessor string One from: 'o', 'go', 'bo', 'wo'
----@return any
-function Layer:_get_meta_accessor(accessor)
-   local function set_buf_option(opt, val)
-      local bufnr = vim.api.nvim_get_current_buf()
-      self.original.bo[bufnr] = self.original.bo[bufnr] or {}
-      if self.original.bo[bufnr][opt] then return end
-      self.original.bo[bufnr][opt] = vim.api.nvim_buf_get_option(bufnr, opt)
-      vim.api.nvim_buf_set_option(bufnr, opt, val)
-   end
-
-   local function set_win_option(opt, val)
-      local winnr = vim.api.nvim_get_current_win()
-      self.original.wo[winnr] = self.original.wo[winnr] or {}
-      if self.original.wo[winnr][opt] then return end
-      self.original.wo[winnr][opt] = vim.api.nvim_win_get_option(winnr, opt)
-      vim.api.nvim_win_set_option(winnr, opt, val)
-   end
-
-   local ma = {
-      bo = util.make_meta_accessor(
-         function(opt)
-            assert(type(opt) ~= 'number',
-               '[keymap-layer.nvim] "vim.bo[bufnr]" meta-aссessor in config.on_enter() function is forbiden, use "vim.bo" instead')
-            return vim.api.nvim_buf_get_option(0, opt)
-         end,
-         function(opt, val)
-            set_buf_option(opt, val)
-
-            if not self.config.buffer then
-               vim.api.nvim_create_autocmd('BufEnter', {
-                  group = augroup_id,
-                  desc = string.format('set "%s" buffer option', opt),
-                  callback = function()
-                     set_buf_option(opt, val)
-                  end
-               })
-            end
-         end
-      ),
-      wo = util.make_meta_accessor(
-         function(opt)
-            assert(type(opt) ~= 'number',
-               '[keymap-layer.nvim] "vim.wo[winnr]" meta-aссessor in config.on_enter() function is forbiden, use "vim.wo" instead')
-            return vim.api.nvim_win_get_option(0, opt)
-         end,
-         function(opt, val)
-            set_win_option(opt, val)
-
-            if not self.config.buffer then
-               vim.api.nvim_create_autocmd('WinEnter', {
-                  group = augroup_id,
-                  desc = string.format('set "%s" window option', opt),
-                  callback = function()
-                     set_win_option(opt, val)
-                  end
-               })
-            end
-         end
-      ),
-      go = util.make_meta_accessor(
-         function(opt)
-            return vim.api.nvim_get_option_value(opt, { scope = 'global' })
-         end,
-         function(opt, val)
-            self.original.go[opt] = vim.api.nvim_get_option_value(opt, { scope = 'global' })
-            vim.api.nvim_set_option_value(opt, val, { scope = 'global' })
-         end
-      ),
-       o = util.make_meta_accessor(
-         function(opt)
-            return vim.api.nvim_get_option_value(opt, {})
-         end,
-         function(opt, val)
-            self.original.o[opt] = vim.api.nvim_get_option_value(opt, {})
-            vim.api.nvim_set_option_value(opt, val, {})
-         end
-      )
-   }
-
-   return ma[accessor]
-end
-
-function Layer:_normalize_input(input)
-   for _, mappings_type in ipairs({ 'enter', 'layer', 'exit' }) do
-      if input[mappings_type] then
-         -- enter_keymaps, layer_keymaps, exit_keymaps
-         local keymaps = mappings_type..'_keymaps'
-
-         self[keymaps] = util.unlimited_depth_table()
-
-         for _, map in ipairs(input[mappings_type]) do
+function Layer:_normalize_input(enter, layer, exit)
+   local r = {}
+   for i, mappings in ipairs({ enter, layer, exit }) do
+      if mappings then
+         local k = util.unlimited_depth_table()
+         for _, map in ipairs(mappings) do
             local mode, lhs, rhs, opts = map[1], map[2], map[3] or '<Nop>', map[4] or {}
-
-            -- In the output of the `nvim_get_keymap` and `nvim_buf_get_keymap`
-            -- functions some keycodes are replaced, for example: `<leader>` and
-            -- some are not, like `<Tab>`.  So to avoid this incompatibility better
-            -- to apply `termcodes` function on both `lhs` and the received keymap
-            -- before comparison.
             lhs = termcodes(lhs)
-
             if type(mode) == 'table' then
                for _, m in ipairs(mode) do
-                  self[keymaps][m][lhs] = { rhs, opts }
+                  k[m][lhs] = { rhs, opts }
                end
             else
-               self[keymaps][mode][lhs] = { rhs, opts }
+               k[mode][lhs] = { rhs, opts }
             end
          end
-
-         util.deep_unsetmetatable(self[keymaps])
+         util.deep_unsetmetatable(k)
+         r[i] = k
       end
    end
+   return r[1], r[2], r[3]
 end
 
 ---Setup layer keymaps for buffer with number `bufnr`
----@param bufnr number the buffer ID
-function Layer:_setup_layer_keymaps(bufnr)
+---@param bufnr integer the buffer ID
+function Layer:_setup_keymaps(bufnr)
    -- If original keymaps for `bufnr` buffer are saved,
    -- then we have already set keymaps for that buffer.
-   if util.tbl_rawget(self.original.buf_keymaps, bufnr) then return end
+   if util.tbl_rawget(self.saved_keymaps, bufnr) then return end
 
-   self:_save_original_keymaps(bufnr)
+   self:_save_keymaps(bufnr)
 
    for mode, keymaps in pairs(self.layer_keymaps) do
       for lhs, map in pairs(keymaps) do
@@ -501,17 +394,19 @@ function Layer:_setup_layer_keymaps(bufnr)
    end
 end
 
----Save key mappings overwritten by Layer for the buffer with number `bufnr` for
----future restore.
----@param bufnr number the buffer ID for which to save keymaps
-function Layer:_save_original_keymaps(bufnr)
+---Save key mappings overwritten by Layer for the paticular buffer
+---for future restore.
+---@param bufnr integer the buffer ID for which to save keymaps
+function Layer:_save_keymaps(bufnr)
+   assert(not self.saved_keymaps[bufnr], 'Layer:_save_keymaps() called twice for same buffer')
+   self.saved_keymaps[bufnr] = {}
+
    for mode, keymaps in pairs(self.layer_keymaps) do
+      self.saved_keymaps[bufnr][mode] = {}
       for _, map in ipairs(vim.api.nvim_buf_get_keymap(bufnr, mode)) do
          map.lhs = termcodes(map.lhs)
-         if keymaps[map.lhs] and
-            not util.tbl_rawget(self.original.buf_keymaps, bufnr, mode, map.lhs)
-         then
-            self.original.buf_keymaps[bufnr][mode][map.lhs] = {
+         if keymaps[map.lhs] then
+            self.saved_keymaps[bufnr][mode][map.lhs] = {
                rhs = map.rhs or '',
                expr = map.expr == 1,
                callback = map.callback,
@@ -523,29 +418,19 @@ function Layer:_save_original_keymaps(bufnr)
          end
       end
    end
-
-   -- To avoid adding into `self.original.buf_keymaps` table already remapped keys
-   -- on `Layer:map` method execution while Layer is active.
-   for mode, keymaps in pairs(self.layer_keymaps) do
-      for lhs, _ in pairs(keymaps) do
-         if not util.tbl_rawget(self.original.buf_keymaps, bufnr, mode, lhs) then
-            self.original.buf_keymaps[bufnr][mode][lhs] = true
-         end
-      end
-   end
 end
 
 ---Restore original keymaps and options overwritten by Layer
-function Layer:_restore_original()
+function Layer:_restore_keymaps()
    if not self.active then return end
 
    -- Restore keymaps
    for mode, keymaps in pairs(self.layer_keymaps) do
       for lhs, _ in pairs(keymaps) do
-         for bufnr, _ in pairs(self.original.buf_keymaps) do
+         for bufnr, _ in pairs(self.saved_keymaps) do
             if vim.api.nvim_buf_is_valid(bufnr) then
-               local map = util.tbl_rawget(self.original.buf_keymaps, bufnr, mode, lhs)
-               if type(map) == 'table' then
+               local map = self.saved_keymaps[bufnr][mode][lhs]
+               if map then
                   vim.api.nvim_buf_set_keymap(bufnr, mode, lhs, map.rhs, {
                      expr = map.expr,
                      callback = map.callback,
@@ -562,35 +447,10 @@ function Layer:_restore_original()
       end
    end
 
-   -- Restore options
-   for opt, val in pairs(self.original.o) do
-      vim.api.nvim_set_option_value(opt, val, {})
-   end
-
-   -- Restore global options
-   for opt, val in pairs(self.original.go) do
-      vim.api.nvim_set_option_value(opt, val, { scope = 'global' })
-   end
-
-   -- Restore buffer options
-   for bufnr, options in pairs(self.original.bo) do
-      if vim.api.nvim_buf_is_valid(bufnr) then
-         for opt, val in pairs(options) do
-            vim.api.nvim_buf_set_option(bufnr, opt, val)
-         end
-      end
-   end
-
-   -- Restore window options
-   for winnr, options in pairs(self.original.wo) do
-      if vim.api.nvim_win_is_valid(winnr) then
-         for opt, val in pairs(options) do
-            vim.api.nvim_win_set_option(winnr, opt, val)
-         end
-      end
-   end
+   self.saved_keymaps = {}
 end
 
+---Set or restart timer
 function Layer:_timer()
    if not self.config.timeout then return end
 
@@ -603,7 +463,7 @@ function Layer:_timer()
    end
 end
 
-function Layer:_debug(...)
+function Layer:debug(...)
    if self.config.debug then
       vim.pretty_print(...)
    end
