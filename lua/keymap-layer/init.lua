@@ -24,6 +24,7 @@ local Layer = Class()
 ---@field debug? boolean
 ---@field buffer? integer
 ---@field timeout? integer
+---@field on_key? function
 ---@field on_enter? table<integer, function>
 ---@field on_exit? table<integer, function>
 
@@ -169,129 +170,72 @@ function Layer:_constructor(input)
       exit_keymaps  = input.exit_keymaps
    end
 
-   -- Setup <Esc> key to exit the Layer if no one exit key have been passed.
+   -- Setup <Esc> key to exit the Layer if no one exit key has been passed.
    if not exit_keymaps then
       exit_keymaps = {}
       for mode, _ in pairs(self.layer_keymaps) do
-         exit_keymaps[mode] = {}
-         exit_keymaps[mode]['<Esc>'] = { '<Nop>', {} }
+         exit_keymaps[mode] = { ['<Esc>'] = {} }
       end
    end
 
-   -- Setup keybindings to enter Layer
    if self.enter_keymaps then
       for mode, keymaps in pairs(self.enter_keymaps) do
          for lhs, map in pairs(keymaps) do
-            local rhs, opts = map[1], map[2]
+            local rhs, opts = map[1], map[2] or {}
+            local keymap = self.get_keymap_function(mode, rhs, opts)
 
-            if rhs and rhs ~= '<Nop>' then
-               vim.keymap.set(mode, self.plug[mode]['entrance-'..lhs], rhs,
-                              { expr = opts.expr, buffer = self.config.buffer })
-            end
-
-            if mode == 'o' then -- operator-pending mode
-               vim.keymap.set(mode, lhs, function()
-                  local operator = vim.v.operator
-
-                  -- Exit operator-pending mode.
-                  vim.api.nvim_feedkeys(termcodes('<Esc>'), 'in', false)
-
-                  local key = util.tbl_rawget(self.plug, mode, 'entrance-'..lhs)
-                  if key then
-                     -- If operator was 'c' (change) then on exiting Insert mode
-                     -- we have moved one character back, and need to move one
-                     -- character forward to return in place.
-                     if operator == 'c' then
-                        local cursor_column = vim.api.nvim_win_get_cursor(0)[2]
-                        if cursor_column > 0 then
-                           vim.api.nvim_feedkeys('l', 'in', false)
-                        end
-                     end
-                     -- Execute operator + motion.
-                     vim.api.nvim_feedkeys(termcodes(operator..key), '', false)
-                  end
-
-                  self:activate() -- Enter layer
-               end, {
-                  buffer = self.config.buffer,
-                  nowait = opts.nowait,
-                  silent = opts.silent,
-                  desc = opts.desc
-               })
-            else
-               vim.keymap.set(mode, lhs, function()
-                  self:activate()
-                  local key = util.tbl_rawget(self.plug, mode, 'entrance-'..lhs)
-                  if key then
-                     key = termcodes(self.plug[mode]['entrance-'..lhs])
-                     vim.api.nvim_feedkeys(key, '', false)
-                  end
-               end, {
-                  buffer = self.config.buffer,
-                  nowait = opts.nowait,
-                  silent = opts.silent,
-                  desc = opts.desc
-               })
-            end
+            vim.keymap.set(mode, lhs, function()
+               keymap()
+               self:activate()
+            end, {
+               buffer = self.config.buffer,
+               nowait = opts.nowait,
+               silent = opts.silent,
+               desc = opts.desc
+            })
          end
       end
    end
 
-   -- Setup Layer keybindings
-   -- Add timer to layer keybindings
-   if self.config.timeout then
-      for mode, keymaps in pairs(self.layer_keymaps) do
-         if not util.tbl_rawget(self.plug, mode, 'timer') then
-            vim.keymap.set(mode, self.plug[mode].timer, function() self:_timer() end)
-         end
+   -- Setup layer keybindings
+   for mode, maps in pairs(self.layer_keymaps) do
+      for lhs, map in pairs(maps) do
+         local rhs, opts = map[1], map[2] or {}
+         local keymap = self.get_keymap_function(mode, rhs, opts)
 
-         for lhs, map in pairs(keymaps) do
-            local rhs, opts = map[1], map[2]
-
-            vim.keymap.set(mode, self.plug[mode][lhs], rhs, { expr = opts.expr })
-
-            self.layer_keymaps[mode][lhs] = {
-               table.concat{
-                  self.plug[mode].timer,
-                  self.plug[mode][lhs]
-               },
-               {
-                  nowait = opts.nowait,
-                  silent = opts.silent,
-                  desc = opts.desc
-               }
+         self.layer_keymaps[mode][lhs] = {
+            function()
+               keymap()
+               if self.config.on_key then self.config.on_key() end
+               if self.config.timeout then self:_timer() end
+            end,
+            {
+               nowait = opts.nowait,
+               silent = opts.silent,
+               desc = opts.desc
             }
-         end
+         }
       end
    end
 
    -- Setup keybindings to exit Layer
    if exit_keymaps then
       for mode, keymaps in pairs(exit_keymaps) do
-         vim.keymap.set(mode, self.plug[mode].exit, function() self:exit() end)
-
          for lhs, map in pairs(keymaps) do
-            local rhs, opts = map[1], map[2]
+            local rhs, opts = map[1], map[2] or {}
+            local keymap = self.get_keymap_function(mode, rhs, opts)
 
-            local expr   = opts.expr
-            local silent = opts.silent
-            local desc   = opts.desc
-            local nowait = opts.nowait
-
-            if rhs and rhs ~= '<Nop>' then
-               vim.keymap.set(mode, self.plug[mode][lhs], rhs, { expr = expr })
-            else
-               self.plug[mode][lhs] = ''
-            end
-
-            rhs = table.concat{
-               self.plug[mode].exit,
-               self.plug[mode][lhs],
+            self.layer_keymaps[mode][lhs] = {
+               function()
+                  self:exit()
+                  keymap()
+               end,
+               {
+                  nowait = opts.nowait,
+                  silent = opts.silent,
+                  desc = opts.desc
+               }
             }
-
-            self.layer_keymaps[mode][lhs] =
-               { rhs, { nowait = nowait, silent = silent, desc = desc } }
-
          end
       end
    end
@@ -373,6 +317,54 @@ function Layer:_normalize_input(enter, layer, exit)
       end
    end
    return r[1], r[2], r[3]
+end
+
+---**Static method**
+---Wraps a passed keymap into a function, on call of which
+---the keymap content will be executed.
+---@param mode string
+---@param rhs string | function
+---@param opts? KeymapOpts
+---@return function
+function Layer.get_keymap_function(mode, rhs, opts)
+   opts = opts or {}
+   local nop = {
+      ['<nop>'] = true,
+      ['<Nop>'] = true,
+      ['<NOP>'] = true
+   }
+   if not rhs or nop[rhs] then
+      return function() end
+   end
+
+   return function()
+      if mode == 'o' then -- operator-pending mode
+         local win_view = vim.fn.winsaveview()
+         local operator = vim.v.operator
+         vim.api.nvim_feedkeys(util.termcodes('<Esc>'), 'n', false)
+         -- local m = opts.remap and 'xm' or 'xn'
+         -- vim.api.nvim_feedkeys(operator, m, false)
+         vim.api.nvim_feedkeys(operator, 'x', false)
+         vim.fn.winrestview(win_view)
+      end
+
+      local f = {} -- keys to feed
+      if opts.expr then
+         if type(rhs) == 'function' then
+            f.keys = rhs()
+         elseif type(rhs) == 'string' then
+            f.keys = vim.api.nvim_eval(rhs)
+         end
+      elseif type(rhs) == 'function' then
+         rhs()
+         return
+      elseif type(rhs) == 'string' then
+         f.keys = rhs
+      end
+      f.keys = util.termcodes(f.keys)
+      f.mode = opts.remap and 'im' or 'in'
+      vim.api.nvim_feedkeys(f.keys, f.mode, true)
+   end
 end
 
 ---Setup layer keymaps for buffer with number `bufnr`
