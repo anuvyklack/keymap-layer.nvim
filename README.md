@@ -36,6 +36,7 @@ On exiting layer the original keybindings become available again like nothing ha
     * [`config` table](#config-table)
         * [`on_enter` and `on_exit`](#on_enter-and-on_exit)
             * [meta-accessors](#meta-accessors)
+        * [`on_key`](#on_key)
         * [`timeout`](#timeout)
         * [`buffer`](#buffer)
 * [Global variable](#global-variable)
@@ -169,6 +170,11 @@ KeyLayer({
 })
 ```
 And that's all, nothing more.
+
+#### `on_key`
+`function`
+
+A function that will be executed **after** any layer key sequence will be pressed.
 
 #### `timeout`
 `boolean | number` (default: `false`)
