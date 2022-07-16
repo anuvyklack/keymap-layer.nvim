@@ -15,7 +15,7 @@ _G.active_keymap_layer = nil
 ---@field config keymap.LayerConfig
 ---@field enter_keymaps table
 ---@field layer_keymaps table
----@field options keymap.layer.Options
+---@field options keymap.layer.MetaAccessor
 ---@field timer libuv.Timer | nil
 ---@field saved_keymaps table
 local Layer = Class()
@@ -133,13 +133,25 @@ function Layer:_constructor(input)
       end
    end
    if self.config.on_exit then
+
+      ---@param name string
+      ---@return MetaAccessor
+      local function disable_meta_accessor(name)
+         local function disable()
+            util.warn(string.format(
+               '"vim.%s" meta-accessor is disabled inside config.on_exit() function',
+               name))
+         end
+         return self.options.make_meta_accessor(disable, disable)
+      end
+
       local env = vim.tbl_deep_extend('force', getfenv(), {
          vim = { o = {}, go = {}, bo = {}, wo = {} }
       }) --[[@as table]]
-      env.vim.o  = util.disable_meta_accessor('o')
-      env.vim.go = util.disable_meta_accessor('go')
-      env.vim.bo = util.disable_meta_accessor('bo')
-      env.vim.wo = util.disable_meta_accessor('wo')
+      env.vim.o  = disable_meta_accessor('o')
+      env.vim.go = disable_meta_accessor('go')
+      env.vim.bo = disable_meta_accessor('bo')
+      env.vim.wo = disable_meta_accessor('wo')
 
       for _, fun in pairs(self.config.on_exit) do
          setfenv(fun, env)
@@ -182,7 +194,7 @@ function Layer:_constructor(input)
       for mode, keymaps in pairs(self.enter_keymaps) do
          for lhs, map in pairs(keymaps) do
             local rhs, opts = map[1], map[2] or {}
-            local keymap = self.get_keymap_function(mode, rhs, opts)
+            local keymap = self.make_keymap_function(mode, rhs, opts)
 
             vim.keymap.set(mode, lhs, function()
                keymap()
@@ -201,7 +213,7 @@ function Layer:_constructor(input)
    for mode, maps in pairs(self.layer_keymaps) do
       for lhs, map in pairs(maps) do
          local rhs, opts = map[1], map[2] or {}
-         local keymap = self.get_keymap_function(mode, rhs, opts)
+         local keymap = self.make_keymap_function(mode, rhs, opts)
 
          self.layer_keymaps[mode][lhs] = {
             function()
@@ -223,7 +235,7 @@ function Layer:_constructor(input)
       for mode, keymaps in pairs(exit_keymaps) do
          for lhs, map in pairs(keymaps) do
             local rhs, opts = map[1], map[2] or {}
-            local keymap = self.get_keymap_function(mode, rhs, opts)
+            local keymap = self.make_keymap_function(mode, rhs, opts)
 
             self.layer_keymaps[mode][lhs] = {
                function()
@@ -326,7 +338,7 @@ end
 ---@param rhs string | function
 ---@param opts? KeymapOpts
 ---@return function
-function Layer.get_keymap_function(mode, rhs, opts)
+function Layer.make_keymap_function(mode, rhs, opts)
    opts = opts or {}
    local nop = {
       ['<nop>'] = true,
