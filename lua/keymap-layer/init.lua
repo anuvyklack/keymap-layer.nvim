@@ -158,20 +158,6 @@ function Layer:_constructor(input)
       end
    end
 
-   -- Table with all left hand sides of key mappings of the type `<Plug>...`.
-   -- Pattern: self.plug.mode.key
-   self.plug = setmetatable({}, {
-      __index = function (t, mode)
-         t[mode] = setmetatable({}, {
-            __index = function (t_mode, key)
-               t_mode[key] = ('<Plug>(Layer%s-%s)'):format(self.id, key)
-               return t_mode[key]
-            end
-         })
-         return t[mode]
-      end
-   })
-
    local exit_keymaps
    if not input.layer_keymaps then
       self.enter_keymaps, self.layer_keymaps, exit_keymaps =
