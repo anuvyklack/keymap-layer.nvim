@@ -27,6 +27,7 @@ local Layer = Class()
 ---@field on_key? function
 ---@field on_enter? table<integer, function>
 ---@field on_exit? table<integer, function>
+---@field allow_nesting? boolean
 
 ---@param input table
 function Layer:_constructor(input)
@@ -65,10 +66,11 @@ function Layer:_constructor(input)
    end
    if input.config then
       vim.validate({
-         on_enter = { input.config.on_enter, { 'function', 'table' }, true },
-         on_exit = { input.config.on_exit, { 'function', 'table' }, true },
-         timeout = { input.config.timeout, { 'boolean', 'number' }, true },
-         buffer = { input.config.buffer, { 'boolean', 'number' }, true }
+         on_enter      = { input.config.on_enter,      { 'function', 'table' }, true },
+         on_exit       = { input.config.on_exit,       { 'function', 'table' }, true },
+         timeout       = { input.config.timeout,       { 'boolean', 'number' }, true },
+         buffer        = { input.config.buffer,        { 'boolean', 'number' }, true },
+         allow_nesting = { input.config.allow_nesting, { 'boolean' }, true },
       })
    end
 
@@ -87,6 +89,9 @@ function Layer:_constructor(input)
    end
    if type(self.config.on_exit) == 'function' then
       self.config.on_exit = { self.config.on_exit }
+   end
+   if self.config.allow_nesting == nil then
+      self.config.allow_nesting = true -- Default to true
    end
 
    self.namespace_id = vim.api.nvim_create_namespace('hydra.layer')
@@ -241,8 +246,13 @@ end
 
 ---Activate layer
 function Layer:activate()
-   if _G.active_keymap_layer and _G.active_keymap_layer.id == self.id then
-      return
+   if _G.active_keymap_layer then
+      if _G.active_keymap_layer.id == self.id then
+         return
+      end
+      if not self.config.allow_nesting or not _G.active_keymap_layer.config.allow_nesting then
+         _G.active_keymap_layer:exit()
+      end
    end
    _G.active_keymap_layer = self
    self.active = true
