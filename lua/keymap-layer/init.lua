@@ -90,6 +90,9 @@ function Layer:_constructor(input)
    if type(self.config.on_exit) == 'function' then
       self.config.on_exit = { self.config.on_exit }
    end
+   if self.config.allow_nesting == nil then
+      self.config.allow_nesting = true -- Default to true
+   end
 
    self.namespace_id = vim.api.nvim_create_namespace('hydra.layer')
    self.options = options('hydra.layer_options') -- meta-accessors
@@ -247,8 +250,7 @@ function Layer:activate()
       if _G.active_keymap_layer.id == self.id then
          return
       end
-      if (self.config.allow_nesting ~= nil and not self.config.allow_nesting) or
-         (_G.active_keymap_layer.config.allow_nesting ~= nil and not _G.active_keymap_layer.config.allow_nesting) then
+      if not self.config.allow_nesting or not _G.active_keymap_layer.config.allow_nesting then
          _G.active_keymap_layer:exit()
       end
    end
